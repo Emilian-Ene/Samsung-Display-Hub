@@ -243,18 +243,26 @@ def _coerce_command_args(
     if not fields:
         return list(raw_args)
 
-    if command_name == "timer_15" and operation == "set":
-        if len(raw_args) <= 1:
-            return list(raw_args)
+    if command_name in {"timer_13", "timer_15"}:
+        if operation == "get":
+            parsed_timer_id = _parse_timer_id(raw_args[0])
+            return [parsed_timer_id] if parsed_timer_id is not None else []
 
-        timer_id = raw_args[0]
+        first_arg = raw_args[0]
+        parsed_timer_id = _parse_timer_id(first_arg)
+        timer_data_raw = raw_args[1:] if parsed_timer_id is not None else raw_args
+
         coerced_timer_data = [
             _coerce_mdc_field_value(value, field)
-            for value, field in zip(raw_args[1:], fields)
+            for value, field in zip(timer_data_raw, fields)
         ]
-        if len(raw_args[1:]) > len(fields):
-            coerced_timer_data.extend(raw_args[1 + len(fields) :])
-        return [timer_id, *coerced_timer_data]
+        if len(timer_data_raw) > len(fields):
+            coerced_timer_data.extend(timer_data_raw[len(fields) :])
+
+        if parsed_timer_id is not None:
+            return [parsed_timer_id, *coerced_timer_data]
+
+        return coerced_timer_data
 
     coerced = [_coerce_mdc_field_value(value, field) for value, field in zip(raw_args, fields)]
     if len(raw_args) > len(fields):
