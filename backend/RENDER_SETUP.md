@@ -17,6 +17,7 @@ Use this when you want the backend cloud-hosted on Render.
 Set these in Render service settings:
 
 - `FRONTEND_ORIGINS=https://your-vercel-app.vercel.app`
+- `REMOTE_AUTH_REQUIRED=true`
 - `CLOUD_API_KEY=<long-random-secret>`
 - `AGENT_SHARED_SECRET=<long-random-secret>`
 

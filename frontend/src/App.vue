@@ -1883,7 +1883,7 @@ const effectiveProtocolForDevice = (device) => {
     .toUpperCase();
   if (protocol === 'AUTO') {
     const port = Number(device?.port) || Number(defaultPort) || 1515;
-    return port === 1515 ? 'SIGNAGE_MDC' : 'SMART_TV_WS';
+    return port === 8001 || port === 8002 ? 'SMART_TV_WS' : 'SIGNAGE_MDC';
   }
   return protocol;
 };

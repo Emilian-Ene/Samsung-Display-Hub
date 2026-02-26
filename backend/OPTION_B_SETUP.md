@@ -13,6 +13,7 @@ This setup lets your public app send commands to TVs that stay in private LANs.
 Deploy `backend/main.py` to your cloud backend (Render/Railway/etc), then set env:
 
 - `FRONTEND_ORIGINS=https://your-frontend.vercel.app`
+- `REMOTE_AUTH_REQUIRED=true`
 - `CLOUD_API_KEY=<strong-random-value>`
 - `AGENT_SHARED_SECRET=<strong-random-value>`
 

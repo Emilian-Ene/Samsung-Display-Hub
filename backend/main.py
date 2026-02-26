@@ -19,6 +19,12 @@ app = FastAPI(title="Samsung TV Control API")
 CONNECTION_TEST_TIMEOUT_SECONDS = float(os.getenv("CONNECTION_TEST_TIMEOUT_SECONDS", "8"))
 AGENT_SHARED_SECRET = os.getenv("AGENT_SHARED_SECRET", "").strip()
 CLOUD_API_KEY = os.getenv("CLOUD_API_KEY", "").strip()
+REMOTE_AUTH_REQUIRED = os.getenv("REMOTE_AUTH_REQUIRED", "true").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 _remote_lock = asyncio.Lock()
 _remote_jobs: dict[str, dict[str, Any]] = {}
@@ -108,11 +114,23 @@ def _utcnow_iso() -> str:
 
 
 def _assert_cloud_api_key(x_api_key: str | None) -> None:
+    if REMOTE_AUTH_REQUIRED and not CLOUD_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Remote API auth is required but CLOUD_API_KEY is not configured.",
+        )
+
     if CLOUD_API_KEY and x_api_key != CLOUD_API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API key.")
 
 
 def _assert_agent_secret(x_agent_token: str | None) -> None:
+    if REMOTE_AUTH_REQUIRED and not AGENT_SHARED_SECRET:
+        raise HTTPException(
+            status_code=503,
+            detail="Remote agent auth is required but AGENT_SHARED_SECRET is not configured.",
+        )
+
     if AGENT_SHARED_SECRET and x_agent_token != AGENT_SHARED_SECRET:
         raise HTTPException(status_code=401, detail="Invalid agent token.")
 
