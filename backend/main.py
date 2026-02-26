@@ -126,6 +126,11 @@ def _connectivity_error_detail(protocol: str, exc: Exception) -> str:
     return f"Connectivity test failed: {exc}"
 
 
+def _is_nak_error_code_1(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return "negative acknowledgement" in message and "error_code 1" in message
+
+
 def _command_fields(command_obj: Any) -> list[dict[str, Any]]:
     fields: list[dict[str, Any]] = []
     for field in getattr(command_obj, "DATA", []):
@@ -294,7 +299,7 @@ async def execute_mdc_command(payload: MdcExecuteRequest) -> dict[str, Any]:
     if operation == "set" and not supports_set:
         raise HTTPException(status_code=400, detail=f"{command_name} does not support SET.")
 
-    try:
+    async def _execute_for_display_id(display_id: int) -> Any:
         target = f"{payload.ip}:{payload.port}"
         async with MDC(target) as mdc:
             method = getattr(mdc, command_name)
@@ -304,25 +309,48 @@ async def execute_mdc_command(payload: MdcExecuteRequest) -> dict[str, Any]:
                     if not payload.args:
                         raise ValueError("timer_15 GET requires timer_id (1-7).")
                     timer_id = int(str(payload.args[0]).strip())
-                    result = await method(payload.display_id, timer_id, ())
-                else:
-                    result = await method(payload.display_id)
-            else:
-                if command_name == "timer_15":
-                    if not payload.args:
-                        raise ValueError("timer_15 SET requires timer_id plus values.")
-                    timer_id = int(str(payload.args[0]).strip())
-                    timer_data = tuple(payload.args[1:])
-                    result = await method(payload.display_id, timer_id, timer_data)
-                else:
-                    result = await method(payload.display_id, tuple(payload.args))
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Failed to execute MDC command: {exc}") from exc
+                    return await method(display_id, timer_id, ())
+                return await method(display_id)
+
+            if command_name == "timer_15":
+                if not payload.args:
+                    raise ValueError("timer_15 SET requires timer_id plus values.")
+                timer_id = int(str(payload.args[0]).strip())
+                timer_data = tuple(payload.args[1:])
+                return await method(display_id, timer_id, timer_data)
+            return await method(display_id, tuple(payload.args))
+
+    candidate_display_ids: list[int] = []
+    for candidate in [payload.display_id, 0, 1]:
+        if candidate not in candidate_display_ids:
+            candidate_display_ids.append(candidate)
+
+    last_exc: Exception | None = None
+    used_display_id = payload.display_id
+    result: Any = None
+
+    for idx, candidate_display_id in enumerate(candidate_display_ids):
+        try:
+            result = await _execute_for_display_id(candidate_display_id)
+            used_display_id = candidate_display_id
+            break
+        except Exception as exc:
+            last_exc = exc
+
+            is_first_try = idx == 0
+            if is_first_try and not _is_nak_error_code_1(exc):
+                raise HTTPException(status_code=502, detail=f"Failed to execute MDC command: {exc}") from exc
+
+            if not _is_nak_error_code_1(exc):
+                continue
+    else:
+        assert last_exc is not None
+        raise HTTPException(status_code=502, detail=f"Failed to execute MDC command: {last_exc}") from last_exc
 
     return {
         "status": "success",
         "tv": payload.ip,
-        "display_id": payload.display_id,
+        "display_id": used_display_id,
         "port": payload.port,
         "protocol": selected_protocol,
         "command": command_name,
