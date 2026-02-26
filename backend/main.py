@@ -1,6 +1,7 @@
 import asyncio
 import os
 from datetime import datetime, time as dt_time, timezone
+from enum import Enum
 from typing import Any
 from uuid import uuid4
 
@@ -343,6 +344,33 @@ def _command_fields(command_obj: Any) -> list[dict[str, Any]]:
     return fields
 
 
+def _serialize_mdc_value(value: Any) -> Any:
+    if isinstance(value, Enum):
+        return value.name
+
+    if isinstance(value, datetime):
+        return value.isoformat()
+
+    if isinstance(value, dt_time):
+        if value.second == 0 and value.microsecond == 0:
+            return value.strftime("%H:%M")
+        return value.strftime("%H:%M:%S")
+
+    if isinstance(value, bytes):
+        return value.hex()
+
+    if isinstance(value, tuple):
+        return [_serialize_mdc_value(item) for item in value]
+
+    if isinstance(value, list):
+        return [_serialize_mdc_value(item) for item in value]
+
+    if isinstance(value, dict):
+        return {str(key): _serialize_mdc_value(item) for key, item in value.items()}
+
+    return value
+
+
 @app.get("/api/mdc/commands")
 async def list_mdc_commands() -> dict[str, list[dict[str, Any]]]:
     payload: list[dict[str, Any]] = []
@@ -545,6 +573,9 @@ async def execute_mdc_command(payload: MdcExecuteRequest) -> dict[str, Any]:
         assert last_exc is not None
         raise HTTPException(status_code=502, detail=f"Failed to execute MDC command: {last_exc}") from last_exc
 
+    serialized_result = _serialize_mdc_value(result)
+    result_values = serialized_result if isinstance(serialized_result, list) else [serialized_result]
+
     return {
         "status": "success",
         "tv": payload.ip,
@@ -555,6 +586,7 @@ async def execute_mdc_command(payload: MdcExecuteRequest) -> dict[str, Any]:
         "operation": operation,
         "args": payload.args,
         "result": str(result),
+        "result_values": result_values,
     }
 
 

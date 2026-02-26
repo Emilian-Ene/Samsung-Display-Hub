@@ -954,6 +954,22 @@ const coerceMdcArgValue = (rawValue, fieldMeta) => {
   return parseGenericArgValue(text);
 };
 
+const formatMdcFieldValue = (value) => {
+  if (Array.isArray(value)) {
+    return value.map((item) => formatMdcFieldValue(item)).join(', ');
+  }
+
+  if (value === null || value === undefined) {
+    return '';
+  }
+
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+
+  return String(value);
+};
+
 const formatFieldLabel = (fieldName) => {
   return String(fieldName || '')
     .toLowerCase()
@@ -2064,6 +2080,24 @@ const executeMdcCommand = async (command, operation, args = []) => {
     pushLog(
       `MDC target: display_ip=${data.tv} display_id=${data.display_id} port=${data.port}`,
     );
+
+    if (
+      data.operation === 'get' &&
+      Array.isArray(data.result_values) &&
+      selectedMdcCommand.value === data.command
+    ) {
+      const nextFieldValues = { ...mdcFieldValues.value };
+      selectedMdcFields.value.forEach((field, index) => {
+        if (index >= data.result_values.length) {
+          return;
+        }
+        nextFieldValues[field.name] = formatMdcFieldValue(
+          data.result_values[index],
+        );
+      });
+      mdcFieldValues.value = nextFieldValues;
+    }
+
     toast.add({
       severity: 'success',
       summary: 'MCD COMAND SUCCEDET',
