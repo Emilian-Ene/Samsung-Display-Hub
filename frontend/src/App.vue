@@ -2075,7 +2075,10 @@ const runConsumerKeyQuickAction = async (
   keys,
   repeat = 1,
   actionKey = 'send',
+  options = {},
 ) => {
+  const silent = Boolean(options?.silent);
+
   if (isKeyBusy.value) {
     return;
   }
@@ -2144,13 +2147,15 @@ const runConsumerKeyQuickAction = async (
       throw lastError || new Error('Consumer key failed');
     }
 
-    appStatus.value = `Key ${sentData.key} sent`;
-    pushLog(`Consumer key ${sentData.key} x${sentData.repeat} sent`);
-    showToast(
-      'success',
-      'Key Sent',
-      `${sentData.key} sent x${sentData.repeat}`,
-    );
+    if (!silent) {
+      appStatus.value = `Key ${sentData.key} sent`;
+      pushLog(`Consumer key ${sentData.key} x${sentData.repeat} sent`);
+      showToast(
+        'success',
+        'Key Sent',
+        `${sentData.key} sent x${sentData.repeat}`,
+      );
+    }
   } catch (error) {
     const detail = formatClientError(error);
     appStatus.value = detail;
@@ -2163,10 +2168,31 @@ const runConsumerKeyQuickAction = async (
 };
 
 const runConsumerHdmiQuickAction = async (hdmiIndex) => {
-  await runConsumerKeyQuickAction(
-    [`KEY_HDMI${hdmiIndex}`, 'KEY_HDMI', 'KEY_SOURCE'],
-    1,
-    `hdmi-${hdmiIndex}`,
+  const normalizedHdmi = Math.max(1, Math.min(4, Number(hdmiIndex) || 1));
+  const rightCount = normalizedHdmi - 1;
+  const sequence = [
+    'KEY_SOURCE',
+    ...Array(rightCount).fill('KEY_RIGHT'),
+    'KEY_ENTER',
+  ];
+
+  for (const key of sequence) {
+    await runConsumerKeyQuickAction(key, 1, `hdmi-${normalizedHdmi}`, {
+      silent: true,
+    });
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, 450);
+    });
+  }
+
+  appStatus.value = `HDMI ${normalizedHdmi} sequence sent`;
+  pushLog(
+    `Consumer HDMI ${normalizedHdmi} sequence sent: ${sequence.join(' -> ')}`,
+  );
+  showToast(
+    'success',
+    'HDMI Sequence Sent',
+    `HDMI ${normalizedHdmi} requested via SOURCE navigation`,
   );
 };
 
