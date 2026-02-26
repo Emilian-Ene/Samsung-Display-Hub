@@ -43,10 +43,6 @@ const selectedMdcCommand = ref('status');
 const mdcOperation = ref('auto');
 const mdcArgsText = ref('');
 
-const consumerKeys = ref([]);
-const consumerKey = ref('KEY_HOME');
-const consumerRepeat = ref('1');
-
 const addName = ref('');
 const addIp = ref('');
 const addPort = ref('');
@@ -69,13 +65,11 @@ const selectedDeviceRows = ref([]);
 const isDeviceTestBusy = ref(false);
 const isPowerBusy = ref(false);
 const isMdcBusy = ref(false);
-const isKeyBusy = ref(false);
-const activeConsumerAction = ref('');
 const volumeLevel = ref(50);
 const brightnessLevel = ref(50);
 const isCommandInfoOpen = ref(false);
 
-const protocolOptions = ['AUTO', 'SIGNAGE_MDC', 'SMART_TV_WS'];
+const protocolOptions = ['AUTO', 'SIGNAGE_MDC'];
 const statusFilterOptions = [
   { label: 'All statuses', value: 'all' },
   { label: 'Online', value: 'online' },
@@ -1087,16 +1081,28 @@ const executeRemoteJob = async (
   return completed.result.data;
 };
 
+const normalizeProtocol = (protocol) => {
+  const normalized = String(protocol || 'AUTO')
+    .trim()
+    .toUpperCase();
+  return normalized === 'SIGNAGE_MDC' ? 'SIGNAGE_MDC' : 'AUTO';
+};
+
 const normalizeDevice = (device) => {
   const target = normalizeTarget(device?.ip, device?.port);
+  const protocol = normalizeProtocol(device?.protocol);
+  const port =
+    protocol === 'SIGNAGE_MDC' && (target.port === 8001 || target.port === 8002)
+      ? 1515
+      : target.port;
 
   return {
     id: String(device?.id || Date.now() + Math.random()),
     name: String(device?.name || 'Unnamed Screen'),
     ip: target.ip,
-    port: target.port,
+    port,
     displayId: Number(device?.displayId) || 0,
-    protocol: String(device?.protocol || 'AUTO'),
+    protocol,
     agentId: String(device?.agentId || ''),
     site: String(device?.site || ''),
     city: String(device?.city || ''),
@@ -1340,7 +1346,11 @@ const loadDevices = () => {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        devices.value = parsed.map((device) => normalizeDevice(device));
+        const normalizedDevices = parsed.map((device) =>
+          normalizeDevice(device),
+        );
+        devices.value = normalizedDevices;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizedDevices));
         selectedDeviceId.value = devices.value[0]?.id || null;
         return;
       }
@@ -1370,25 +1380,6 @@ const fetchMdcCommands = async () => {
   }
 };
 
-const fetchConsumerKeys = async () => {
-  try {
-    const response = await fetchWithTimeout(`${API_BASE}/api/consumer/keys`);
-    const data = await parseApiResponse(response);
-    if (!response.ok) {
-      throw new Error(data.detail || 'Failed to load consumer keys');
-    }
-    consumerKeys.value = data.keys || [];
-    if (consumerKeys.value.length > 0) {
-      consumerKey.value = consumerKeys.value[0];
-    }
-    pushLog(`Loaded ${consumerKeys.value.length} consumer keys`);
-  } catch (error) {
-    const detail = formatClientError(error);
-    pushLog(`Consumer key catalog error: ${detail}`);
-    showToast('warn', 'Consumer Keys', detail);
-  }
-};
-
 const checkDevice = async (device, options = {}) => {
   const isBulk = Boolean(options.isBulk);
   const target = normalizeTarget(device.ip, device.port);
@@ -1405,63 +1396,6 @@ const checkDevice = async (device, options = {}) => {
     }
 
     const agentId = getDeviceAgentId(device);
-
-    if (agentId && device.protocol === 'SMART_TV_WS') {
-      const probeData = await executeRemoteJob(device, 'probe', {
-        ip: device.ip,
-        display_id: Number(device.displayId) || 0,
-        timeout: 1.5,
-      });
-      if (!probeData?.found) {
-        throw new Error('No WS response from device');
-      }
-
-      device.port = Number(probeData.port);
-      device.protocol = probeData.protocol;
-      device.status = 'online';
-      device.lastFeedback = `Reachable via ${probeData.protocol} on port ${probeData.port}`;
-      device.lastChecked = new Date().toLocaleString();
-      if (!isBulk) {
-        appStatus.value = `${device.name}: online (${probeData.protocol})`;
-        pushLog(
-          `Test success ${device.name} via agent ${agentId}: ${device.lastFeedback}`,
-        );
-        showToast(
-          'success',
-          'Connection OK',
-          `${device.name} is online (${probeData.protocol})`,
-        );
-        saveDevices();
-      }
-      return;
-    }
-
-    if (device.protocol === 'SMART_TV_WS') {
-      const probeData = await autoProbe(
-        device.ip,
-        Number(device.displayId) || 0,
-      );
-      if (!probeData.found) {
-        throw new Error('No WS response from device');
-      }
-
-      device.port = Number(probeData.port);
-      device.protocol = probeData.protocol;
-      device.status = 'online';
-      device.lastFeedback = `Reachable via ${probeData.protocol} on port ${probeData.port}`;
-      device.lastChecked = new Date().toLocaleString();
-      if (!isBulk) {
-        appStatus.value = `${device.name}: online (${probeData.protocol})`;
-        pushLog(`Test success ${device.name}: ${device.lastFeedback}`);
-        showToast(
-          'success',
-          'Connection OK',
-          `${device.name} is online (${probeData.protocol})`,
-        );
-        saveDevices();
-      }
-      return;
-    }
 
     let data;
     if (agentId) {
@@ -1897,8 +1831,7 @@ const effectiveProtocolForDevice = (device) => {
     .trim()
     .toUpperCase();
   if (protocol === 'AUTO') {
-    const port = Number(device?.port) || Number(defaultPort) || 1515;
-    return port === 8001 || port === 8002 ? 'SMART_TV_WS' : 'SIGNAGE_MDC';
+    return 'SIGNAGE_MDC';
   }
   return protocol;
 };
@@ -2071,135 +2004,6 @@ const runMuteQuickAction = async (isOn) => {
   );
 };
 
-const runConsumerKeyQuickAction = async (
-  keys,
-  repeat = 1,
-  actionKey = 'send',
-  options = {},
-) => {
-  const silent = Boolean(options?.silent);
-
-  if (isKeyBusy.value) {
-    return;
-  }
-
-  if (!selectedDevice.value) {
-    showToast('warn', 'No Device Selected', 'Select a device first');
-    return;
-  }
-
-  const candidateKeys = Array.isArray(keys) ? keys : [keys];
-  const cleanedKeys = candidateKeys
-    .map((value) =>
-      String(value || '')
-        .trim()
-        .toUpperCase(),
-    )
-    .filter((value) => value.length > 0);
-
-  if (!cleanedKeys.length) {
-    showToast('warn', 'Missing Key', 'No quick key was provided');
-    return;
-  }
-
-  isKeyBusy.value = true;
-  activeConsumerAction.value = actionKey;
-  try {
-    let sentData = null;
-    let lastError = null;
-
-    for (const key of cleanedKeys) {
-      const payload = {
-        ...toPayload(selectedDevice.value),
-        protocol: 'SMART_TV_WS',
-        key,
-        repeat,
-      };
-
-      try {
-        const agentId = getDeviceAgentId(selectedDevice.value);
-        if (agentId) {
-          sentData = await executeRemoteJob(
-            selectedDevice.value,
-            'consumer_key',
-            payload,
-          );
-        } else {
-          const response = await fetch(`${API_BASE}/api/consumer/key`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          });
-          const data = await parseApiResponse(response);
-          if (!response.ok) {
-            throw new Error(data.detail || 'Consumer key failed');
-          }
-          sentData = data;
-        }
-        lastError = null;
-        break;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-
-    if (!sentData) {
-      throw lastError || new Error('Consumer key failed');
-    }
-
-    if (!silent) {
-      appStatus.value = `Key ${sentData.key} sent`;
-      pushLog(`Consumer key ${sentData.key} x${sentData.repeat} sent`);
-      showToast(
-        'success',
-        'Key Sent',
-        `${sentData.key} sent x${sentData.repeat}`,
-      );
-    }
-  } catch (error) {
-    const detail = formatClientError(error);
-    appStatus.value = detail;
-    pushLog(`Consumer key error: ${detail}`);
-    showToast('error', 'Send Key Failed', detail);
-  } finally {
-    isKeyBusy.value = false;
-    activeConsumerAction.value = '';
-  }
-};
-
-const runConsumerHdmiQuickAction = async (hdmiIndex) => {
-  const normalizedHdmi = Math.max(1, Math.min(4, Number(hdmiIndex) || 1));
-  const rightCount = normalizedHdmi - 1;
-  const sequence = [
-    'KEY_SOURCE',
-    ...Array(rightCount).fill('KEY_RIGHT'),
-    'KEY_ENTER',
-  ];
-
-  for (const key of sequence) {
-    await runConsumerKeyQuickAction(key, 1, `hdmi-${normalizedHdmi}`, {
-      silent: true,
-    });
-    await new Promise((resolve) => {
-      window.setTimeout(resolve, 450);
-    });
-  }
-
-  appStatus.value = `HDMI ${normalizedHdmi} sequence sent`;
-  pushLog(
-    `Consumer HDMI ${normalizedHdmi} sequence sent: ${sequence.join(' -> ')}`,
-  );
-  showToast(
-    'success',
-    'HDMI Sequence Sent',
-    `HDMI ${normalizedHdmi} requested via SOURCE navigation`,
-  );
-};
-
-const runConsumerPowerQuickAction = async () => {
-  await runConsumerKeyQuickAction('KEY_POWER', 1, 'power-toggle');
-};
-
 const setVolumeFromSlider = async () => {
   if (!selectedDevice.value) {
     showToast('warn', 'No Device Selected', 'Select a device first');
@@ -2266,30 +2070,6 @@ const setBrightnessFromSlider = async () => {
   await executeMdcCommand('brightness', 'set', [value]);
 };
 
-const sendConsumerKey = async () => {
-  if (isKeyBusy.value) {
-    return;
-  }
-
-  if (!selectedDevice.value) {
-    showToast('warn', 'No Device Selected', 'Select a device first');
-    return;
-  }
-
-  if (!consumerKey.value) {
-    showToast('warn', 'Missing Field', 'Select a key first');
-    return;
-  }
-
-  const repeat = Number(consumerRepeat.value);
-  if (!Number.isFinite(repeat) || repeat < 1) {
-    showToast('warn', 'Invalid Repeat', 'Repeat must be 1 or higher');
-    return;
-  }
-
-  await runConsumerKeyQuickAction(consumerKey.value, repeat, 'send');
-};
-
 onMounted(async () => {
   loadCommandLogs();
 
@@ -2304,7 +2084,7 @@ onMounted(async () => {
   }
 
   loadDevices();
-  await Promise.all([fetchMdcCommands(), fetchConsumerKeys()]);
+  await fetchMdcCommands();
   await refreshAllDevices();
 });
 </script>
@@ -2609,7 +2389,7 @@ onMounted(async () => {
                 label="Test Connection"
                 icon="pi pi-wifi"
                 :loading="isDeviceTestBusy"
-                :disabled="isPowerBusy || isMdcBusy || isKeyBusy"
+                :disabled="isPowerBusy || isMdcBusy"
                 @click="runSelectedDeviceTest"
               />
               <Button
@@ -2617,7 +2397,7 @@ onMounted(async () => {
                 severity="success"
                 outlined
                 :loading="isPowerBusy"
-                :disabled="isDeviceTestBusy || isMdcBusy || isKeyBusy"
+                :disabled="isDeviceTestBusy || isMdcBusy"
                 @click="requestPowerAction('on')"
               />
               <Button
@@ -2625,7 +2405,7 @@ onMounted(async () => {
                 severity="danger"
                 outlined
                 :loading="isPowerBusy"
-                :disabled="isDeviceTestBusy || isMdcBusy || isKeyBusy"
+                :disabled="isDeviceTestBusy || isMdcBusy"
                 @click="requestPowerAction('off')"
               />
               <Button
@@ -2656,7 +2436,7 @@ onMounted(async () => {
                   label="Set Volume"
                   icon="pi pi-play"
                   :loading="isMdcBusy"
-                  :disabled="isDeviceTestBusy || isPowerBusy || isKeyBusy"
+                  :disabled="isDeviceTestBusy || isPowerBusy"
                   @click="setVolumeFromSlider"
                 />
               </div>
@@ -2676,7 +2456,7 @@ onMounted(async () => {
                   label="Set Brightness"
                   icon="pi pi-play"
                   :loading="isMdcBusy"
-                  :disabled="isDeviceTestBusy || isPowerBusy || isKeyBusy"
+                  :disabled="isDeviceTestBusy || isPowerBusy"
                   @click="setBrightnessFromSlider"
                 />
               </div>
@@ -2689,7 +2469,7 @@ onMounted(async () => {
                 severity="secondary"
                 outlined
                 :loading="isMdcBusy"
-                :disabled="isDeviceTestBusy || isPowerBusy || isKeyBusy"
+                :disabled="isDeviceTestBusy || isPowerBusy"
                 @click="
                   runMdcQuickAction({ command: 'status', operation: 'get' })
                 "
@@ -2699,7 +2479,7 @@ onMounted(async () => {
                 severity="secondary"
                 outlined
                 :loading="isMdcBusy"
-                :disabled="isDeviceTestBusy || isPowerBusy || isKeyBusy"
+                :disabled="isDeviceTestBusy || isPowerBusy"
                 @click="runMuteQuickAction(true)"
               />
               <Button
@@ -2707,7 +2487,7 @@ onMounted(async () => {
                 severity="secondary"
                 outlined
                 :loading="isMdcBusy"
-                :disabled="isDeviceTestBusy || isPowerBusy || isKeyBusy"
+                :disabled="isDeviceTestBusy || isPowerBusy"
                 @click="runMuteQuickAction(false)"
               />
             </div>
@@ -2736,7 +2516,7 @@ onMounted(async () => {
                 <Button
                   label="Run CLI Command"
                   :loading="isMdcBusy"
-                  :disabled="isDeviceTestBusy || isPowerBusy || isKeyBusy"
+                  :disabled="isDeviceTestBusy || isPowerBusy"
                   @click="runMdcCommand"
                 />
               </div>
@@ -2861,70 +2641,6 @@ onMounted(async () => {
                 <p><strong>Example:</strong> {{ selectedCommandExample }}</p>
               </div>
             </Dialog>
-          </template>
-        </Card>
-
-        <Card>
-          <template #title>Consumer TV Keys</template>
-          <template #content>
-            <p class="card-help">
-              Send Samsung consumer remote keys over WebSocket protocol.
-            </p>
-            <div class="form-grid">
-              <Select v-model="consumerKey" :options="consumerKeys" />
-              <InputText v-model="consumerRepeat" placeholder="Repeat" />
-              <Button
-                label="Send Key"
-                :loading="isKeyBusy && activeConsumerAction === 'send'"
-                :disabled="
-                  isDeviceTestBusy || isPowerBusy || isMdcBusy || isKeyBusy
-                "
-                @click="sendConsumerKey"
-              />
-            </div>
-
-            <div class="quick-actions-row" style="margin-top: 0.75rem">
-              <Button
-                label="HDMI 1"
-                severity="secondary"
-                outlined
-                :loading="isKeyBusy && activeConsumerAction === 'hdmi-1'"
-                :disabled="isDeviceTestBusy || isPowerBusy || isKeyBusy"
-                @click="runConsumerHdmiQuickAction(1)"
-              />
-              <Button
-                label="HDMI 2"
-                severity="secondary"
-                outlined
-                :loading="isKeyBusy && activeConsumerAction === 'hdmi-2'"
-                :disabled="isDeviceTestBusy || isPowerBusy || isKeyBusy"
-                @click="runConsumerHdmiQuickAction(2)"
-              />
-              <Button
-                label="HDMI 3"
-                severity="secondary"
-                outlined
-                :loading="isKeyBusy && activeConsumerAction === 'hdmi-3'"
-                :disabled="isDeviceTestBusy || isPowerBusy || isKeyBusy"
-                @click="runConsumerHdmiQuickAction(3)"
-              />
-              <Button
-                label="HDMI 4"
-                severity="secondary"
-                outlined
-                :loading="isKeyBusy && activeConsumerAction === 'hdmi-4'"
-                :disabled="isDeviceTestBusy || isPowerBusy || isKeyBusy"
-                @click="runConsumerHdmiQuickAction(4)"
-              />
-              <Button
-                label="Power ON/OFF"
-                severity="secondary"
-                outlined
-                :loading="isKeyBusy && activeConsumerAction === 'power-toggle'"
-                :disabled="isDeviceTestBusy || isMdcBusy || isKeyBusy"
-                @click="runConsumerPowerQuickAction"
-              />
-            </div>
           </template>
         </Card>
 

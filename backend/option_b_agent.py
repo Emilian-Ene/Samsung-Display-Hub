@@ -90,13 +90,6 @@ def _execute_local_job(job: dict[str, Any]) -> dict[str, Any]:
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
 
-    elif kind == "consumer_key":
-        response = requests.post(
-            f"{LOCAL_BACKEND_URL}/api/consumer/key",
-            json=payload,
-            timeout=REQUEST_TIMEOUT_SECONDS,
-        )
-
     elif kind == "local_http":
         method = str(payload.get("method", "GET")).strip().upper()
         path = str(payload.get("path", "/health")).strip()

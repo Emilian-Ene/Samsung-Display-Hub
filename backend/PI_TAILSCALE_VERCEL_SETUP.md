@@ -83,8 +83,8 @@ Redeploy after saving env vars.
 Keep real screen LAN IPs/ports:
 
 - IP: `192.168.1.xxx`
-- Port: `1515` (MDC) or `8001/8002` (WS)
-- Protocol: `AUTO` or explicit
+- Port: `1515` (MDC)
+- Protocol: `AUTO` or `SIGNAGE_MDC`
 
 The Pi can reach these private IPs because it is inside the same LAN.
 

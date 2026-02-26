@@ -104,7 +104,6 @@ curl "https://your-cloud-backend.example.com/api/remote/agents" \
 - `test` -> local `GET /api/test/{ip}`
 - `probe` -> local `GET /api/probe/{ip}`
 - `mdc_execute` -> local `POST /api/mdc/execute`
-- `consumer_key` -> local `POST /api/consumer/key`
 - `local_http` -> advanced passthrough local HTTP request
 
 ## Important MVP notes

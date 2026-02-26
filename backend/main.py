@@ -1,7 +1,6 @@
 import asyncio
 import os
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -10,17 +9,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from samsung_mdc import MDC
 
-try:
-    from samsungtvws import SamsungTVWS
-except ImportError:
-    SamsungTVWS = None
-
 app = FastAPI(title="Samsung TV Control API")
 
 CONNECTION_TEST_TIMEOUT_SECONDS = float(os.getenv("CONNECTION_TEST_TIMEOUT_SECONDS", "8"))
 AGENT_SHARED_SECRET = os.getenv("AGENT_SHARED_SECRET", "").strip()
 CLOUD_API_KEY = os.getenv("CLOUD_API_KEY", "").strip()
-SAMSUNGTVWS_TOKEN_DIR = os.getenv("SAMSUNGTVWS_TOKEN_DIR", "").strip()
 REMOTE_AUTH_REQUIRED = os.getenv("REMOTE_AUTH_REQUIRED", "true").strip().lower() in {
     "1",
     "true",
@@ -47,29 +40,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-SMART_TV_KEYS = [
-    "KEY_HOME",
-    "KEY_POWER",
-    "KEY_POWERON",
-    "KEY_POWEROFF",
-    "KEY_HDMI",
-    "KEY_HDMI1",
-    "KEY_HDMI2",
-    "KEY_HDMI3",
-    "KEY_HDMI4",
-    "KEY_MUTE",
-    "KEY_VOLUP",
-    "KEY_VOLDOWN",
-    "KEY_SOURCE",
-    "KEY_MENU",
-    "KEY_RETURN",
-    "KEY_UP",
-    "KEY_DOWN",
-    "KEY_LEFT",
-    "KEY_RIGHT",
-    "KEY_ENTER",
-]
-
 
 class ConnectionRequest(BaseModel):
     ip: str
@@ -82,11 +52,6 @@ class MdcExecuteRequest(ConnectionRequest):
     command: str
     args: list[str | int | float | bool] = Field(default_factory=list)
     operation: str = "auto"
-
-
-class ConsumerKeyRequest(ConnectionRequest):
-    key: str
-    repeat: int = Field(default=1, ge=1, le=20)
 
 
 class RemoteEnqueueRequest(BaseModel):
@@ -139,14 +104,14 @@ def _assert_agent_secret(x_agent_token: str | None) -> None:
 
 def resolve_protocol(protocol: str, port: int) -> str:
     selected_protocol = protocol.strip().upper()
-    if selected_protocol not in {"AUTO", "SIGNAGE_MDC", "SMART_TV_WS"}:
+    if selected_protocol not in {"AUTO", "SIGNAGE_MDC"}:
         raise HTTPException(
             status_code=400,
-            detail="Invalid protocol. Use AUTO, SIGNAGE_MDC, or SMART_TV_WS.",
+            detail="Invalid protocol. Use AUTO or SIGNAGE_MDC.",
         )
 
     if selected_protocol == "AUTO":
-        return "SMART_TV_WS" if port in {8001, 8002} else "SIGNAGE_MDC"
+        return "SIGNAGE_MDC"
 
     return selected_protocol
 
@@ -158,22 +123,7 @@ def _connectivity_error_detail(protocol: str, exc: Exception) -> str:
             "Check the IP/port/protocol values and confirm the display is reachable."
         )
 
-    message = str(exc)
-
-    if protocol == "SMART_TV_WS":
-        if "ms.channel.timeOut" in message:
-            return (
-                "Connectivity test failed: SMART_TV_WS handshake timed out. "
-                "Open the TV and accept the remote pairing prompt, then test again."
-            )
-
-        if "WinError 1225" in message or "Connection refused" in message:
-            return (
-                "Connectivity test failed: SMART_TV_WS port is closed/refused. "
-                "Check TV power/network and confirm port 8001/8002 is enabled."
-            )
-
-    return f"Connectivity test failed: {message}"
+    return f"Connectivity test failed: {exc}"
 
 
 def _command_fields(command_obj: Any) -> list[dict[str, Any]]:
@@ -219,62 +169,6 @@ async def list_mdc_commands() -> dict[str, list[dict[str, Any]]]:
     return {"commands": payload}
 
 
-@app.get("/api/consumer/keys")
-async def list_consumer_keys() -> dict[str, list[str]]:
-    return {"keys": SMART_TV_KEYS}
-
-
-async def _send_consumer_key(ip: str, port: int, key: str, repeat: int, name: str = "SamsungBeta API") -> None:
-    if SamsungTVWS is None:
-        raise RuntimeError("samsungtvws is not installed")
-
-    token_file = _samsungtvws_token_file(ip, port)
-
-    def _worker() -> None:
-        tv = SamsungTVWS(ip, port=port, name=name, token_file=str(token_file))
-        try:
-            tv.open()
-            for _ in range(repeat):
-                tv.send_key(key)
-        finally:
-            try:
-                tv.close()
-            except Exception:
-                pass
-
-    await asyncio.to_thread(_worker)
-
-
-async def _probe_consumer_connection(ip: str, port: int, name: str = "SamsungBeta Probe") -> None:
-    if SamsungTVWS is None:
-        raise RuntimeError("samsungtvws is not installed")
-
-    token_file = _samsungtvws_token_file(ip, port)
-
-    def _worker() -> None:
-        tv = SamsungTVWS(ip, port=port, name=name, token_file=str(token_file))
-        try:
-            tv.open()
-        finally:
-            try:
-                tv.close()
-            except Exception:
-                pass
-
-    await asyncio.to_thread(_worker)
-
-
-def _samsungtvws_token_file(ip: str, port: int) -> Path:
-    if SAMSUNGTVWS_TOKEN_DIR:
-        base_dir = Path(SAMSUNGTVWS_TOKEN_DIR)
-    else:
-        base_dir = Path.home() / ".samsungtvws_tokens"
-
-    base_dir.mkdir(parents=True, exist_ok=True)
-    safe_ip = ip.replace(".", "_").replace(":", "_")
-    return base_dir / f"tv_token_{safe_ip}_{port}.txt"
-
-
 async def _tcp_port_open(ip: str, port: int, timeout: float) -> bool:
     try:
         connect_coro = asyncio.open_connection(ip, port)
@@ -300,8 +194,6 @@ async def auto_probe_ports(
 
     candidates: list[tuple[int, str]] = [
         (1515, "SIGNAGE_MDC"),
-        (8002, "SMART_TV_WS"),
-        (8001, "SMART_TV_WS"),
     ]
 
     attempts: list[dict[str, Any]] = []
@@ -321,14 +213,11 @@ async def auto_probe_ports(
             continue
 
         try:
-            if protocol == "SIGNAGE_MDC":
-                async def _probe_mdc() -> None:
-                    async with MDC(f"{ip}:{port}") as mdc:
-                        await mdc.status(display_id)
+            async def _probe_mdc() -> None:
+                async with MDC(f"{ip}:{port}") as mdc:
+                    await mdc.status(display_id)
 
-                await asyncio.wait_for(_probe_mdc(), timeout=timeout)
-            else:
-                await asyncio.wait_for(_probe_consumer_connection(ip, port), timeout=timeout)
+            await asyncio.wait_for(_probe_mdc(), timeout=timeout)
 
             attempts.append({
                 "port": port,
@@ -375,31 +264,6 @@ async def auto_probe_ports(
         "port": found_port,
         "protocol": found_protocol,
         "attempts": attempts,
-    }
-
-
-@app.post("/api/consumer/key")
-async def send_consumer_key(payload: ConsumerKeyRequest) -> dict[str, str | int]:
-    selected_protocol = resolve_protocol(payload.protocol, payload.port)
-    if selected_protocol != "SMART_TV_WS":
-        raise HTTPException(status_code=400, detail="Consumer key endpoint requires SMART_TV_WS protocol.")
-
-    key = payload.key.strip().upper()
-    if key not in SMART_TV_KEYS:
-        raise HTTPException(status_code=400, detail="Unsupported key.")
-
-    try:
-        await _send_consumer_key(payload.ip, payload.port, key, payload.repeat)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Failed to send consumer key: {exc}") from exc
-
-    return {
-        "status": "success",
-        "tv": payload.ip,
-        "port": payload.port,
-        "protocol": selected_protocol,
-        "key": key,
-        "repeat": payload.repeat,
     }
 
 
@@ -670,28 +534,12 @@ async def control_tv(
     selected_protocol = resolve_protocol(protocol, port)
 
     try:
-        if selected_protocol == "SIGNAGE_MDC":
-            target = f"{ip}:{port}"
-            async with MDC(target) as mdc:
-                if normalized == "on":
-                    await mdc.power(display_id, ("ON",))
-                else:
-                    await mdc.power(display_id, ("OFF",))
-        else:
-            keys = ["KEY_POWERON", "KEY_POWER"] if normalized == "on" else ["KEY_POWEROFF", "KEY_POWER"]
-            used_key = keys[0]
-            last_error: Exception | None = None
-            for key in keys:
-                try:
-                    await _send_consumer_key(ip, port, key, repeat=1)
-                    used_key = key
-                    last_error = None
-                    break
-                except Exception as exc:
-                    last_error = exc
-
-            if last_error is not None:
-                raise last_error
+        target = f"{ip}:{port}"
+        async with MDC(target) as mdc:
+            if normalized == "on":
+                await mdc.power(display_id, ("ON",))
+            else:
+                await mdc.power(display_id, ("OFF",))
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Failed to send command: {exc}") from exc
 
@@ -703,10 +551,6 @@ async def control_tv(
         "port": port,
         "protocol": selected_protocol,
     }
-
-    if selected_protocol == "SMART_TV_WS":
-        response["key"] = used_key
-
     return response
 
 
@@ -726,46 +570,16 @@ async def test_tv_connection(
     selected_protocol = resolve_protocol(protocol, port)
 
     try:
-        if selected_protocol == "SIGNAGE_MDC":
-            target = f"{ip}:{port}"
+        target = f"{ip}:{port}"
 
-            async def _probe_mdc() -> Any:
-                async with MDC(target) as mdc:
-                    return await mdc.status(display_id)
+        async def _probe_mdc() -> Any:
+            async with MDC(target) as mdc:
+                return await mdc.status(display_id)
 
-            status_raw = await asyncio.wait_for(
-                _probe_mdc(),
-                timeout=CONNECTION_TEST_TIMEOUT_SECONDS,
-            )
-            return {
-                "status": "success",
-                "reachable": True,
-                "tv": ip,
-                "display_id": display_id,
-                "port": port,
-                "protocol": selected_protocol,
-                "mdc_status": str(status_raw),
-            }
-
-        tcp_open = await _tcp_port_open(
-            ip,
-            port,
-            timeout=min(CONNECTION_TEST_TIMEOUT_SECONDS, 2.0),
+        status_raw = await asyncio.wait_for(
+            _probe_mdc(),
+            timeout=CONNECTION_TEST_TIMEOUT_SECONDS,
         )
-        if not tcp_open:
-            raise TimeoutError("SMART_TV_WS TCP port is not reachable")
-
-        verified = True
-        verification_error = None
-        try:
-            await asyncio.wait_for(
-                _probe_consumer_connection(ip, port),
-                timeout=CONNECTION_TEST_TIMEOUT_SECONDS,
-            )
-        except Exception as exc:
-            verified = False
-            verification_error = str(exc)
-
         return {
             "status": "success",
             "reachable": True,
@@ -773,12 +587,7 @@ async def test_tv_connection(
             "display_id": display_id,
             "port": port,
             "protocol": selected_protocol,
-            "verified": verified,
-            "warning": (
-                None
-                if verified
-                else f"TCP reachable; WS verification failed: {verification_error}"
-            ),
+            "mdc_status": str(status_raw),
         }
     except Exception as exc:
         raise HTTPException(
