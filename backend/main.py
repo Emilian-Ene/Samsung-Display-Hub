@@ -1,6 +1,6 @@
 import asyncio
 import os
-from datetime import datetime, timezone
+from datetime import datetime, time as dt_time, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -129,6 +129,90 @@ def _connectivity_error_detail(protocol: str, exc: Exception) -> str:
 def _is_nak_error_code_1(exc: Exception) -> bool:
     message = str(exc).lower()
     return "negative acknowledgement" in message and "error_code 1" in message
+
+
+def _parse_time_arg(raw_value: str) -> dt_time:
+    value = raw_value.strip()
+    for fmt in ("%H:%M", "%H:%M:%S"):
+        try:
+            return datetime.strptime(value, fmt).time()
+        except ValueError:
+            continue
+
+    raise ValueError(
+        "Invalid time value. Use HH:MM or HH:MM:SS (example: 09:30 or 21:45:00)."
+    )
+
+
+def _parse_datetime_arg(raw_value: str) -> datetime:
+    value = raw_value.strip()
+    candidates = [value]
+    if value.endswith("Z"):
+        candidates.insert(0, value[:-1] + "+00:00")
+
+    for candidate in candidates:
+        try:
+            return datetime.fromisoformat(candidate)
+        except ValueError:
+            continue
+
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(value, fmt)
+        except ValueError:
+            continue
+
+    raise ValueError(
+        "Invalid datetime value. Use ISO format (example: 2026-02-26T18:45:00)."
+    )
+
+
+def _coerce_mdc_field_value(raw_value: Any, field: Any) -> Any:
+    field_type = type(field).__name__.lower()
+    if not isinstance(raw_value, str):
+        return raw_value
+
+    text = raw_value.strip()
+
+    if "datetime" in field_type:
+        return _parse_datetime_arg(text)
+
+    if field_type in {"time", "time12h"}:
+        return _parse_time_arg(text)
+
+    return raw_value
+
+
+def _coerce_command_args(
+    command_name: str,
+    command_obj: Any,
+    operation: str,
+    raw_args: list[str | int | float | bool],
+) -> list[Any]:
+    if not raw_args:
+        return []
+
+    fields = list(getattr(command_obj, "DATA", []))
+    if not fields:
+        return list(raw_args)
+
+    if command_name == "timer_15" and operation == "set":
+        if len(raw_args) <= 1:
+            return list(raw_args)
+
+        timer_id = raw_args[0]
+        coerced_timer_data = [
+            _coerce_mdc_field_value(value, field)
+            for value, field in zip(raw_args[1:], fields)
+        ]
+        if len(raw_args[1:]) > len(fields):
+            coerced_timer_data.extend(raw_args[1 + len(fields) :])
+        return [timer_id, *coerced_timer_data]
+
+    coerced = [_coerce_mdc_field_value(value, field) for value, field in zip(raw_args, fields)]
+    if len(raw_args) > len(fields):
+        coerced.extend(raw_args[len(fields) :])
+    return coerced
 
 
 def _command_fields(command_obj: Any) -> list[dict[str, Any]]:
@@ -299,6 +383,16 @@ async def execute_mdc_command(payload: MdcExecuteRequest) -> dict[str, Any]:
     if operation == "set" and not supports_set:
         raise HTTPException(status_code=400, detail=f"{command_name} does not support SET.")
 
+    try:
+        resolved_args = _coerce_command_args(
+            command_name=command_name,
+            command_obj=command_obj,
+            operation=operation,
+            raw_args=payload.args,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     async def _execute_for_display_id(display_id: int) -> Any:
         target = f"{payload.ip}:{payload.port}"
         async with MDC(target) as mdc:
@@ -306,19 +400,19 @@ async def execute_mdc_command(payload: MdcExecuteRequest) -> dict[str, Any]:
 
             if operation == "get":
                 if command_name == "timer_15":
-                    if not payload.args:
+                    if not resolved_args:
                         raise ValueError("timer_15 GET requires timer_id (1-7).")
-                    timer_id = int(str(payload.args[0]).strip())
+                    timer_id = int(str(resolved_args[0]).strip())
                     return await method(display_id, timer_id, ())
                 return await method(display_id)
 
             if command_name == "timer_15":
-                if not payload.args:
+                if not resolved_args:
                     raise ValueError("timer_15 SET requires timer_id plus values.")
-                timer_id = int(str(payload.args[0]).strip())
-                timer_data = tuple(payload.args[1:])
+                timer_id = int(str(resolved_args[0]).strip())
+                timer_data = tuple(resolved_args[1:])
                 return await method(display_id, timer_id, timer_data)
-            return await method(display_id, tuple(payload.args))
+            return await method(display_id, tuple(resolved_args))
 
     candidate_display_ids: list[int] = []
     for candidate in [payload.display_id, 0, 1]:
