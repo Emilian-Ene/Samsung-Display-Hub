@@ -101,6 +101,60 @@ const selectedMdcFields = computed(() => {
     : [];
 });
 
+const mdcCommandLabelOverrides = {
+  dst: 'Daylight Saving Time',
+  manual_lamp: 'Backlight Intensity',
+  auto_lamp: 'Auto Backlight Schedule',
+  clock_m: 'Clock (Minute Precision)',
+  clock_s: 'Clock (Second Precision)',
+  weekly_restart: 'Weekly Restart Schedule',
+  panel_on_time: 'Panel On Time',
+  virtual_remote: 'Remote Key Command',
+  set_content_download: 'Content Download URL',
+};
+
+const mdcUppercaseTokens = new Set([
+  'mdc',
+  'osd',
+  'rgb',
+  'ir',
+  'id',
+  'tv',
+  'pip',
+  'url',
+  'api',
+  'ip',
+]);
+
+const mdcCommandLabel = (commandName) => {
+  const name = String(commandName || '').trim();
+  if (!name) {
+    return '';
+  }
+
+  if (Object.hasOwn(mdcCommandLabelOverrides, name)) {
+    return mdcCommandLabelOverrides[name];
+  }
+
+  return name
+    .split('_')
+    .map((part) => {
+      const lower = String(part || '').toLowerCase();
+      if (mdcUppercaseTokens.has(lower)) {
+        return lower.toUpperCase();
+      }
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(' ');
+};
+
+const mdcCommandOptions = computed(() =>
+  mdcCommands.value.map((command) => ({
+    ...command,
+    label: mdcCommandLabel(command.name),
+  })),
+);
+
 const commandHelpCatalog = {
   status: {
     description:
@@ -177,6 +231,11 @@ const commandHelpCatalog = {
   weekly_restart: {
     description:
       'Gets or sets weekly auto-restart schedule by weekday and time.',
+    formats: [
+      'SET args order: WEEKDAY, TIME',
+      'TIME format: HH:MM (example: 03:30)',
+      'Example: MON,TUE,WED,03:30',
+    ],
   },
   magicinfo_channel: {
     description: 'Sets MagicInfo direct channel number.',
@@ -245,6 +304,11 @@ const commandHelpCatalog = {
   auto_lamp: {
     description: 'Gets or sets backlight auto-lamp schedule and values.',
     notes: ['Enabling manual lamp may turn auto lamp off.'],
+    formats: [
+      'SET args order: MAX_TIME, MAX_LAMP_VALUE, MIN_TIME, MIN_LAMP_VALUE',
+      'Time format: HH:MM',
+      'Example: 09:00,90,21:00,30',
+    ],
   },
   manual_lamp: {
     description: 'Gets or sets manual backlight level.',
@@ -320,14 +384,28 @@ const commandHelpCatalog = {
   timer_13: {
     description: 'Legacy integrated timer command format (13-length variant).',
     notes: ['Older models feature; newer devices may require timer_15.'],
+    formats: [
+      'SET starts with TIMER_ID, then timer values',
+      'ON_TIME/OFF_TIME format: HH:MM',
+      'Example start: 1,08:00,true,18:00,true,...',
+    ],
   },
   timer_15: {
     description: 'Integrated timer command format for newer models.',
     notes: ['Older models may not support this format.'],
+    formats: [
+      'SET starts with TIMER_ID, then timer values',
+      'ON_TIME/OFF_TIME format: HH:MM',
+      'Example start: 1,08:00,true,18:00,true,...',
+    ],
   },
   clock_m: {
     description: 'Gets or sets device clock (minute precision).',
     notes: ['Intended for models developed until 2013.'],
+    formats: [
+      'DATETIME format: YYYY-MM-DDTHH:MM or YYYY-MM-DD HH:MM',
+      'Example: 2026-02-10T18:20',
+    ],
   },
   holiday_set: {
     description: 'Adds/deletes holiday schedule windows.',
@@ -347,6 +425,11 @@ const commandHelpCatalog = {
   },
   dst: {
     description: 'Gets or sets DST schedule and offset rules.',
+    formats: [
+      'SET args order: DST_STATE, START_MONTH, START_WEEK, START_WEEKDAY, START_TIME, END_MONTH, END_WEEK, END_WEEKDAY, END_TIME, OFFSET',
+      'START_TIME/END_TIME format: HH:MM',
+      'Example: MANUAL,MAR,WEEK_LAST,SUN,02:00,OCT,WEEK_LAST,SUN,03:00,PLUS_1_00',
+    ],
   },
   auto_id_setting: {
     description: 'Starts or ends auto ID assignment mode.',
@@ -357,6 +440,10 @@ const commandHelpCatalog = {
   clock_s: {
     description: 'Gets or sets device clock (second precision).',
     notes: ['Intended for models developed after 2013.'],
+    formats: [
+      'DATETIME format: YYYY-MM-DDTHH:MM:SS or YYYY-MM-DD HH:MM:SS',
+      'Example: 2026-02-10T18:20:00',
+    ],
   },
   set_content_download: {
     description:
@@ -448,6 +535,14 @@ const selectedCommandNotes = computed(() => {
   return commandHelpCatalog[name]?.notes || [];
 });
 
+const selectedCommandFormats = computed(() => {
+  const name = selectedMdcCommand.value;
+  if (!name) {
+    return [];
+  }
+  return commandHelpCatalog[name]?.formats || [];
+});
+
 const selectedCommandExample = computed(() => {
   const name = selectedMdcCommand.value;
   if (!name) {
@@ -466,7 +561,12 @@ const selectedCommandExample = computed(() => {
     })
     .join(', ');
 
-  return fieldExample.length ? `${name} ${fieldExample}` : `${name}`;
+  const friendlyName = mdcCommandLabel(name);
+  const commandPrefix = `${friendlyName} (${name})`;
+
+  return fieldExample.length
+    ? `${commandPrefix} ${fieldExample}`
+    : `${commandPrefix}`;
 });
 
 const selectedDeviceCount = computed(() => selectedDeviceRows.value.length);
@@ -2528,8 +2628,8 @@ onMounted(async () => {
                 <div class="mdc-command-select-wrap">
                   <Select
                     v-model="selectedMdcCommand"
-                    :options="mdcCommands"
-                    option-label="name"
+                    :options="mdcCommandOptions"
+                    option-label="label"
                     option-value="name"
                     class="mdc-command-select"
                   />
@@ -2560,7 +2660,7 @@ onMounted(async () => {
                 }}
               </p>
               <p v-if="selectedCommandMeta" class="feedback">
-                {{ selectedCommandMeta.name }} | GET:
+                {{ mdcCommandLabel(selectedCommandMeta.name) }} | GET:
                 {{ selectedCommandMeta.supports_get ? 'yes' : 'no' }} | SET:
                 {{ selectedCommandMeta.supports_set ? 'yes' : 'no' }}
               </p>
@@ -2630,7 +2730,14 @@ onMounted(async () => {
               :style="{ width: 'min(720px, 92vw)' }"
             >
               <div class="mdc-info-dialog">
-                <p><strong>Command:</strong> {{ selectedMdcCommand || '-' }}</p>
+                <p>
+                  <strong>Command:</strong>
+                  {{
+                    selectedMdcCommand
+                      ? mdcCommandLabel(selectedMdcCommand)
+                      : '-'
+                  }}
+                </p>
                 <p><strong>Description:</strong> {{ selectedCommandHelp }}</p>
                 <div v-if="selectedCommandNotes.length">
                   <strong>Notes:</strong>
@@ -2640,6 +2747,17 @@ onMounted(async () => {
                       :key="`note-${selectedMdcCommand}-${index}`"
                     >
                       {{ note }}
+                    </li>
+                  </ul>
+                </div>
+                <div v-if="selectedCommandFormats.length">
+                  <strong>Format Tips:</strong>
+                  <ul class="mdc-info-fields">
+                    <li
+                      v-for="(tip, index) in selectedCommandFormats"
+                      :key="`tip-${selectedMdcCommand}-${index}`"
+                    >
+                      {{ tip }}
                     </li>
                   </ul>
                 </div>
