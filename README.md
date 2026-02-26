@@ -64,6 +64,11 @@ If your screens are in a private network (for example `192.168.x.x`), use:
 Full step-by-step guide:
 
 - `backend/PI_TAILSCALE_VERCEL_SETUP.md`
+- `backend/PI_SERVER_SETUP_AUTOSTART.md`
+
+For multiple locations/Pis, see the **Multi-location setup** section in:
+
+- `backend/PI_SERVER_SETUP_AUTOSTART.md`
 
 ## Local run
 

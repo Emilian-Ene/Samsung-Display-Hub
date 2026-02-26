@@ -165,3 +165,22 @@ ls -la /home/paragon-av/Samsung-Display-Hub/backend/.venv/bin/python
 Set Vercel env var:
 
 - `VITE_API_URL=https://paragon.taila5270a.ts.net`
+
+---
+
+## 8) Multi-location setup (multiple Raspberry Pis)
+
+If you have multiple sites, each site needs its own Pi backend URL.
+
+Provide this mapping for each location:
+
+- `location_name` -> `pi_backend_url`
+
+Example:
+
+- `Bucharest` -> `https://pi-buc-xxxx.ts.net`
+- `Cluj` -> `https://pi-clj-xxxx.ts.net`
+- `Iasi` -> `https://pi-ias-xxxx.ts.net`
+
+Use the same location value format as your device records (`city` or `site`).
+This allows frontend routing to send each screen command to the correct Pi backend.
