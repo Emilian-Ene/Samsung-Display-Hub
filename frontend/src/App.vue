@@ -1629,6 +1629,7 @@ const scrollToTop = () => {
 
 const autoProbeAddDraft = async () => {
   const target = normalizeTarget(addIp.value, addPort.value);
+  const agentId = addAgentId.value.trim();
 
   if (!target.ip) {
     appStatus.value = 'Enter IP before auto probe';
@@ -1638,7 +1639,20 @@ const autoProbeAddDraft = async () => {
 
   try {
     appStatus.value = `Probing ${target.ip}...`;
-    const data = await autoProbe(target.ip, Number(addDisplayId.value) || 0);
+    const displayId = Number(addDisplayId.value) || 0;
+    const data = agentId
+      ? await executeRemoteJob(
+          { agentId },
+          'probe',
+          {
+            ip: target.ip,
+            display_id: displayId,
+            timeout: 1.5,
+          },
+          30000,
+        )
+      : await autoProbe(target.ip, displayId);
+
     if (!data.found) {
       appStatus.value = 'No known Samsung control port found';
       showToast(
