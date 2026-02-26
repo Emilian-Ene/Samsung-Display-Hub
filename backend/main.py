@@ -1,6 +1,7 @@
 import asyncio
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -19,6 +20,7 @@ app = FastAPI(title="Samsung TV Control API")
 CONNECTION_TEST_TIMEOUT_SECONDS = float(os.getenv("CONNECTION_TEST_TIMEOUT_SECONDS", "8"))
 AGENT_SHARED_SECRET = os.getenv("AGENT_SHARED_SECRET", "").strip()
 CLOUD_API_KEY = os.getenv("CLOUD_API_KEY", "").strip()
+SAMSUNGTVWS_TOKEN_DIR = os.getenv("SAMSUNGTVWS_TOKEN_DIR", "").strip()
 REMOTE_AUTH_REQUIRED = os.getenv("REMOTE_AUTH_REQUIRED", "true").strip().lower() in {
     "1",
     "true",
@@ -226,8 +228,10 @@ async def _send_consumer_key(ip: str, port: int, key: str, repeat: int, name: st
     if SamsungTVWS is None:
         raise RuntimeError("samsungtvws is not installed")
 
+    token_file = _samsungtvws_token_file(ip, port)
+
     def _worker() -> None:
-        tv = SamsungTVWS(ip, port=port, name=name)
+        tv = SamsungTVWS(ip, port=port, name=name, token_file=str(token_file))
         try:
             tv.open()
             for _ in range(repeat):
@@ -245,8 +249,10 @@ async def _probe_consumer_connection(ip: str, port: int, name: str = "SamsungBet
     if SamsungTVWS is None:
         raise RuntimeError("samsungtvws is not installed")
 
+    token_file = _samsungtvws_token_file(ip, port)
+
     def _worker() -> None:
-        tv = SamsungTVWS(ip, port=port, name=name)
+        tv = SamsungTVWS(ip, port=port, name=name, token_file=str(token_file))
         try:
             tv.open()
         finally:
@@ -256,6 +262,17 @@ async def _probe_consumer_connection(ip: str, port: int, name: str = "SamsungBet
                 pass
 
     await asyncio.to_thread(_worker)
+
+
+def _samsungtvws_token_file(ip: str, port: int) -> Path:
+    if SAMSUNGTVWS_TOKEN_DIR:
+        base_dir = Path(SAMSUNGTVWS_TOKEN_DIR)
+    else:
+        base_dir = Path.home() / ".samsungtvws_tokens"
+
+    base_dir.mkdir(parents=True, exist_ok=True)
+    safe_ip = ip.replace(".", "_").replace(":", "_")
+    return base_dir / f"tv_token_{safe_ip}_{port}.txt"
 
 
 async def _tcp_port_open(ip: str, port: int, timeout: float) -> bool:
