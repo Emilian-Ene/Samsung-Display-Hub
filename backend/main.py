@@ -262,6 +262,53 @@ def _coerce_command_args(
     return coerced
 
 
+def _parse_timer_id(raw_value: Any) -> int | None:
+    if isinstance(raw_value, bool):
+        return None
+
+    parsed: int | None = None
+    if isinstance(raw_value, int):
+        parsed = raw_value
+    elif isinstance(raw_value, float) and raw_value.is_integer():
+        parsed = int(raw_value)
+    elif isinstance(raw_value, str):
+        value = raw_value.strip()
+        if not value:
+            return None
+        try:
+            parsed = int(value)
+        except ValueError:
+            return None
+
+    if parsed is None:
+        return None
+
+    if parsed < 1 or parsed > 7:
+        raise ValueError("timer_id must be between 1 and 7.")
+
+    return parsed
+
+
+def _resolve_timer_args(operation: str, resolved_args: list[Any]) -> tuple[int, tuple[Any, ...]]:
+    default_timer_id = 1
+
+    if operation == "get":
+        if not resolved_args:
+            return default_timer_id, ()
+
+        parsed_timer_id = _parse_timer_id(resolved_args[0])
+        return parsed_timer_id if parsed_timer_id is not None else default_timer_id, ()
+
+    if not resolved_args:
+        return default_timer_id, ()
+
+    parsed_timer_id = _parse_timer_id(resolved_args[0])
+    if parsed_timer_id is None:
+        return default_timer_id, tuple(resolved_args)
+
+    return parsed_timer_id, tuple(resolved_args[1:])
+
+
 def _command_fields(command_obj: Any) -> list[dict[str, Any]]:
     fields: list[dict[str, Any]] = []
     for field in getattr(command_obj, "DATA", []):
@@ -440,25 +487,27 @@ async def execute_mdc_command(payload: MdcExecuteRequest) -> dict[str, Any]:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    timer_payload: tuple[int, tuple[Any, ...]] | None = None
+    if command_name in {"timer_13", "timer_15"}:
+        try:
+            timer_payload = _resolve_timer_args(operation, resolved_args)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     async def _execute_for_display_id(display_id: int) -> Any:
         target = f"{payload.ip}:{payload.port}"
         async with MDC(target) as mdc:
             method = getattr(mdc, command_name)
 
-            if operation == "get":
-                if command_name == "timer_15":
-                    if not resolved_args:
-                        raise ValueError("timer_15 GET requires timer_id (1-7).")
-                    timer_id = int(str(resolved_args[0]).strip())
+            if timer_payload is not None:
+                timer_id, timer_data = timer_payload
+                if operation == "get":
                     return await method(display_id, timer_id, ())
+                return await method(display_id, timer_id, timer_data)
+
+            if operation == "get":
                 return await method(display_id)
 
-            if command_name == "timer_15":
-                if not resolved_args:
-                    raise ValueError("timer_15 SET requires timer_id plus values.")
-                timer_id = int(str(resolved_args[0]).strip())
-                timer_data = tuple(resolved_args[1:])
-                return await method(display_id, timer_id, timer_data)
             return await method(display_id, tuple(resolved_args))
 
     candidate_display_ids: list[int] = []
