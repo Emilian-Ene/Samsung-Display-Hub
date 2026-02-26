@@ -69,7 +69,11 @@ const volumeLevel = ref(50);
 const brightnessLevel = ref(50);
 const isCommandInfoOpen = ref(false);
 
-const protocolOptions = ['AUTO', 'SIGNAGE_MDC'];
+const PROTOCOL_SIGNAGE_MDC = 'SIGNAGE_MDC';
+const protocolOptions = [
+  { label: 'AUTO', value: 'AUTO' },
+  { label: 'MDC', value: PROTOCOL_SIGNAGE_MDC },
+];
 const statusFilterOptions = [
   { label: 'All statuses', value: 'all' },
   { label: 'Online', value: 'online' },
@@ -1085,14 +1089,20 @@ const normalizeProtocol = (protocol) => {
   const normalized = String(protocol || 'AUTO')
     .trim()
     .toUpperCase();
-  return normalized === 'SIGNAGE_MDC' ? 'SIGNAGE_MDC' : 'AUTO';
+  return normalized === PROTOCOL_SIGNAGE_MDC || normalized === 'MDC'
+    ? PROTOCOL_SIGNAGE_MDC
+    : 'AUTO';
 };
+
+const protocolLabel = (protocol) =>
+  normalizeProtocol(protocol) === PROTOCOL_SIGNAGE_MDC ? 'MDC' : 'AUTO';
 
 const normalizeDevice = (device) => {
   const target = normalizeTarget(device?.ip, device?.port);
   const protocol = normalizeProtocol(device?.protocol);
   const port =
-    protocol === 'SIGNAGE_MDC' && (target.port === 8001 || target.port === 8002)
+    protocol === PROTOCOL_SIGNAGE_MDC &&
+    (target.port === 8001 || target.port === 8002)
       ? 1515
       : target.port;
 
@@ -1309,7 +1319,7 @@ const importDevicesCsv = async (event) => {
 };
 
 const testTargetText = (device) => {
-  return `${device.ip}:${device.port} (${device.protocol}, ID ${device.displayId})`;
+  return `${device.ip}:${device.port} (${protocolLabel(device.protocol)}, ID ${device.displayId})`;
 };
 
 const autoProbe = async (ip, displayId) => {
@@ -1419,15 +1429,15 @@ const checkDevice = async (device, options = {}) => {
     }
 
     device.status = 'online';
-    device.lastFeedback = `Reachable via ${data.protocol} on port ${data.port}`;
+    device.lastFeedback = `Reachable via ${protocolLabel(data.protocol)} on port ${data.port}`;
     device.lastChecked = new Date().toLocaleString();
     if (!isBulk) {
-      appStatus.value = `${device.name}: online (${data.protocol})`;
+      appStatus.value = `${device.name}: online (${protocolLabel(data.protocol)})`;
       pushLog(`Test success ${device.name}: ${device.lastFeedback}`);
       showToast(
         'success',
         'Connection OK',
-        `${device.name} is online (${data.protocol})`,
+        `${device.name} is online (${protocolLabel(data.protocol)})`,
       );
     }
   } catch (error) {
@@ -1599,14 +1609,14 @@ const autoProbeAddDraft = async () => {
     }
 
     addPort.value = String(data.port);
-    addProtocol.value = data.protocol;
+    addProtocol.value = normalizeProtocol(data.protocol);
     const verificationText = data.verified ? 'verified' : 'inferred';
-    appStatus.value = `Detected ${data.protocol} on port ${data.port} (${verificationText})`;
+    appStatus.value = `Detected ${protocolLabel(data.protocol)} on port ${data.port} (${verificationText})`;
     const severity = data.verified ? 'success' : 'info';
     showToast(
       severity,
       'Connection Detected',
-      `${data.protocol} on port ${data.port} (${verificationText})`,
+      `${protocolLabel(data.protocol)} on port ${data.port} (${verificationText})`,
     );
   } catch (error) {
     const detail = formatClientError(error);
@@ -1831,7 +1841,7 @@ const effectiveProtocolForDevice = (device) => {
     .trim()
     .toUpperCase();
   if (protocol === 'AUTO') {
-    return 'SIGNAGE_MDC';
+    return PROTOCOL_SIGNAGE_MDC;
   }
   return protocol;
 };
@@ -1913,17 +1923,17 @@ const executeMdcCommand = async (command, operation, args = []) => {
       const fallbackPort = Number(defaultPort) || 1515;
       const fallbackPayload = {
         ...payload,
-        protocol: 'SIGNAGE_MDC',
+        protocol: PROTOCOL_SIGNAGE_MDC,
         port: fallbackPort,
       };
 
       pushLog(
-        `MDC fallback: retry ${command} on SIGNAGE_MDC:${fallbackPort} (device protocol is ${selectedDevice.value.protocol})`,
+        `MDC fallback: retry ${command} on MDC:${fallbackPort} (device protocol is ${protocolLabel(selectedDevice.value.protocol)})`,
       );
       showToast(
         'info',
         'MDC Retry',
-        `Retrying ${command} on SIGNAGE_MDC:${fallbackPort}`,
+        `Retrying ${command} on MDC:${fallbackPort}`,
         2400,
       );
 
@@ -2020,11 +2030,11 @@ const setVolumeFromSlider = async () => {
   }
 
   const effectiveProtocol = effectiveProtocolForDevice(selectedDevice.value);
-  if (effectiveProtocol !== 'SIGNAGE_MDC') {
+  if (effectiveProtocol !== PROTOCOL_SIGNAGE_MDC) {
     showToast(
       'warn',
       'MDC Only',
-      'Set Volume works only with SIGNAGE_MDC (port 1515).',
+      'Set Volume works only with MDC (port 1515).',
     );
     return;
   }
@@ -2053,11 +2063,11 @@ const setBrightnessFromSlider = async () => {
   }
 
   const effectiveProtocol = effectiveProtocolForDevice(selectedDevice.value);
-  if (effectiveProtocol !== 'SIGNAGE_MDC') {
+  if (effectiveProtocol !== PROTOCOL_SIGNAGE_MDC) {
     showToast(
       'warn',
       'MDC Only',
-      'Set Brightness works only with SIGNAGE_MDC (port 1515).',
+      'Set Brightness works only with MDC (port 1515).',
     );
     return;
   }
@@ -2188,7 +2198,12 @@ onMounted(async () => {
               <InputText v-model="addPort" placeholder="Port" />
               <InputText v-model="addDisplayId" placeholder="Display ID" />
               <InputText v-model="addAgentId" placeholder="Agent ID" />
-              <Select v-model="addProtocol" :options="protocolOptions" />
+              <Select
+                v-model="addProtocol"
+                :options="protocolOptions"
+                option-label="label"
+                option-value="value"
+              />
               <Button
                 label="Detect Connection"
                 icon="pi pi-search"
@@ -2297,7 +2312,9 @@ onMounted(async () => {
               </Column>
 
               <Column header="Protocol">
-                <template #body="{ data }">{{ data.protocol }}</template>
+                <template #body="{ data }">{{
+                  protocolLabel(data.protocol)
+                }}</template>
               </Column>
 
               <Column>
@@ -2387,6 +2404,8 @@ onMounted(async () => {
               <Select
                 v-model="selectedDevice.protocol"
                 :options="protocolOptions"
+                option-label="label"
+                option-value="value"
               />
               <Button label="Save Changes" @click="saveSelectedDevice" />
             </div>
