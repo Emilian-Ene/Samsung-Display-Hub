@@ -1750,7 +1750,12 @@ const saveSelectedDevice = () => {
 
   saveDevices();
   appStatus.value = 'Device details saved';
-  showToast('success', 'Device Saved', `${selectedDevice.value.name} updated`);
+  toast.add({
+    severity: 'success',
+    summary: 'Device Saved',
+    detail: `${selectedDevice.value.name} updated`,
+    life: 2800,
+  });
 };
 
 const runPower = async (command) => {
@@ -1964,7 +1969,7 @@ const executeMdcCommand = async (command, operation, args = []) => {
     const detail = formatClientError(error);
     appStatus.value = detail;
     pushLog(`MDC error: ${detail}`);
-    showToast('error', 'MDC Command Failed', detail);
+    showToast('error', 'MDC Comand Failds', 'Check logs for details');
     return null;
   } finally {
     isMdcBusy.value = false;
