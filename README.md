@@ -65,6 +65,8 @@ Full step-by-step guide:
 
 - `backend/PI_TAILSCALE_VERCEL_SETUP.md`
 - `backend/PI_SERVER_SETUP_AUTOSTART.md`
+- `backend/OPTION_B_SETUP.md` (cloud broker + Pi agents)
+- `backend/RENDER_SETUP.md` (deploy backend on Render)
 
 For multiple locations/Pis, see the **Multi-location setup** section in:
 

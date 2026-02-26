@@ -184,3 +184,86 @@ Example:
 
 Use the same location value format as your device records (`city` or `site`).
 This allows frontend routing to send each screen command to the correct Pi backend.
+
+---
+
+## 9) Option B agent auto start (systemd)
+
+Use this if backend is hosted on Render (or any cloud) and each Pi runs local agent.
+
+Create environment file:
+
+```bash
+sudo nano /etc/samsung-option-b-agent.env
+```
+
+Paste values (edit for your deployment):
+
+```dotenv
+CLOUD_BASE_URL=https://your-render-service.onrender.com
+AGENT_ID=site-bucharest
+AGENT_SHARED_SECRET=replace-with-strong-random-secret
+LOCAL_BACKEND_URL=http://127.0.0.1:8000
+AGENT_POLL_INTERVAL_SECONDS=2
+AGENT_MAX_JOBS_PER_POLL=5
+AGENT_REQUEST_TIMEOUT_SECONDS=20
+```
+
+Protect file permissions:
+
+```bash
+sudo chmod 600 /etc/samsung-option-b-agent.env
+```
+
+Create service file:
+
+```bash
+sudo nano /etc/systemd/system/samsung-option-b-agent.service
+```
+
+Paste:
+
+```ini
+[Unit]
+Description=Samsung Display Hub Option B Agent
+After=network-online.target samsung-backend.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=paragon-av
+WorkingDirectory=/home/paragon-av/Samsung-Display-Hub/backend
+EnvironmentFile=/etc/samsung-option-b-agent.env
+ExecStart=/home/paragon-av/Samsung-Display-Hub/backend/.venv/bin/python /home/paragon-av/Samsung-Display-Hub/backend/option_b_agent.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable samsung-option-b-agent
+sudo systemctl start samsung-option-b-agent
+```
+
+Check status/logs:
+
+```bash
+sudo systemctl status samsung-option-b-agent
+sudo journalctl -u samsung-option-b-agent -f
+```
+
+Restart later:
+
+```bash
+sudo systemctl restart samsung-option-b-agent
+```
+
+Repo templates are available here:
+
+- `backend/systemd/samsung-option-b-agent.service`
+- `backend/systemd/samsung-option-b-agent.env.example`

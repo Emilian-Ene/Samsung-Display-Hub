@@ -21,6 +21,7 @@ const defaultTvIp = import.meta.env.VITE_DEFAULT_TV_IP || '192.168.1.122';
 const defaultDisplayId = import.meta.env.VITE_DEFAULT_DISPLAY_ID || '1';
 const defaultPort = import.meta.env.VITE_DEFAULT_PORT || '1515';
 const defaultProtocol = import.meta.env.VITE_DEFAULT_PROTOCOL || 'SIGNAGE_MDC';
+const cloudApiKey = import.meta.env.VITE_CLOUD_API_KEY || '';
 const STORAGE_KEY = 'samsung-admin-devices-v1';
 const LOGS_STORAGE_KEY = 'samsung-admin-logs-v1';
 const BULK_REFRESH_CONCURRENCY = 8;
@@ -51,6 +52,7 @@ const addIp = ref('');
 const addPort = ref('');
 const addDisplayId = ref('');
 const addProtocol = ref('AUTO');
+const addAgentId = ref('');
 const addSite = ref('');
 const addCity = ref('');
 const addZone = ref('');
@@ -956,6 +958,8 @@ const runInBatches = async (items, batchSize, worker) => {
 };
 
 const REQUEST_TIMEOUT_MS = 10000;
+const REMOTE_JOB_POLL_INTERVAL_MS = 1200;
+const REMOTE_JOB_TIMEOUT_MS = 25000;
 
 const normalizeTarget = (rawIp, rawPort) => {
   const fallbackPort = Number(rawPort) || 1515;
@@ -1003,6 +1007,85 @@ const fetchWithTimeout = async (
   }
 };
 
+const remoteHeaders = () => {
+  const headers = { 'Content-Type': 'application/json' };
+  if (cloudApiKey) {
+    headers['x-api-key'] = cloudApiKey;
+  }
+  return headers;
+};
+
+const getDeviceAgentId = (device) => String(device?.agentId || '').trim();
+
+const enqueueRemoteJob = async (agentId, kind, payload) => {
+  const response = await fetchWithTimeout(`${API_BASE}/api/remote/jobs`, {
+    method: 'POST',
+    headers: remoteHeaders(),
+    body: JSON.stringify({
+      agent_id: agentId,
+      kind,
+      payload,
+    }),
+  });
+  const data = await parseApiResponse(response);
+  if (!response.ok) {
+    throw new Error(data.detail || 'Failed to enqueue remote job');
+  }
+  return data;
+};
+
+const pollRemoteJob = async (jobId, timeoutMs = REMOTE_JOB_TIMEOUT_MS) => {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const response = await fetchWithTimeout(
+      `${API_BASE}/api/remote/jobs/${encodeURIComponent(jobId)}`,
+      {
+        headers: remoteHeaders(),
+      },
+    );
+    const data = await parseApiResponse(response);
+    if (!response.ok) {
+      throw new Error(data.detail || 'Failed to read remote job status');
+    }
+
+    if (data.status === 'completed') {
+      return data;
+    }
+
+    if (data.status === 'failed') {
+      throw new Error(data.error || 'Remote agent execution failed');
+    }
+
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, REMOTE_JOB_POLL_INTERVAL_MS);
+    });
+  }
+
+  throw new Error(
+    `Remote job timeout after ${Math.round(timeoutMs / 1000)}s. Agent may be offline.`,
+  );
+};
+
+const executeRemoteJob = async (
+  device,
+  kind,
+  payload,
+  timeoutMs = REMOTE_JOB_TIMEOUT_MS,
+) => {
+  const agentId = getDeviceAgentId(device);
+  if (!agentId) {
+    throw new Error('Missing Agent ID on device');
+  }
+
+  const queued = await enqueueRemoteJob(agentId, kind, payload);
+  const completed = await pollRemoteJob(queued.job_id, timeoutMs);
+  if (!completed?.result || typeof completed.result !== 'object') {
+    throw new Error('Remote job completed without result payload');
+  }
+  return completed.result.data;
+};
+
 const normalizeDevice = (device) => {
   const target = normalizeTarget(device?.ip, device?.port);
 
@@ -1013,6 +1096,7 @@ const normalizeDevice = (device) => {
     port: target.port,
     displayId: Number(device?.displayId) || 0,
     protocol: String(device?.protocol || 'AUTO'),
+    agentId: String(device?.agentId || ''),
     site: String(device?.site || ''),
     city: String(device?.city || ''),
     zone: String(device?.zone || ''),
@@ -1077,6 +1161,7 @@ const exportDevicesCsv = () => {
     'port',
     'displayId',
     'protocol',
+    'agentId',
     'site',
     'city',
     'zone',
@@ -1093,6 +1178,7 @@ const exportDevicesCsv = () => {
         device.port,
         device.displayId,
         device.protocol,
+        device.agentId,
         device.site,
         device.city,
         device.zone,
@@ -1176,6 +1262,7 @@ const importDevicesCsv = async (event) => {
           port: Number(row.port) || 1515,
           displayId: Number(row.displayid) || 0,
           protocol: row.protocol || 'AUTO',
+          agentId: row.agentid || '',
           site: row.site || '',
           city: row.city || '',
           zone: row.zone || '',
@@ -1316,6 +1403,38 @@ const checkDevice = async (device, options = {}) => {
       saveDevices();
     }
 
+    const agentId = getDeviceAgentId(device);
+
+    if (agentId && device.protocol === 'SMART_TV_WS') {
+      const probeData = await executeRemoteJob(device, 'probe', {
+        ip: device.ip,
+        display_id: Number(device.displayId) || 0,
+        timeout: 1.5,
+      });
+      if (!probeData?.found) {
+        throw new Error('No WS response from device');
+      }
+
+      device.port = Number(probeData.port);
+      device.protocol = probeData.protocol;
+      device.status = 'online';
+      device.lastFeedback = `Reachable via ${probeData.protocol} on port ${probeData.port}`;
+      device.lastChecked = new Date().toLocaleString();
+      if (!isBulk) {
+        appStatus.value = `${device.name}: online (${probeData.protocol})`;
+        pushLog(
+          `Test success ${device.name} via agent ${agentId}: ${device.lastFeedback}`,
+        );
+        showToast(
+          'success',
+          'Connection OK',
+          `${device.name} is online (${probeData.protocol})`,
+        );
+        saveDevices();
+      }
+      return;
+    }
+
     if (device.protocol === 'SMART_TV_WS') {
       const probeData = await autoProbe(
         device.ip,
@@ -1343,18 +1462,25 @@ const checkDevice = async (device, options = {}) => {
       return;
     }
 
-    const params = new URLSearchParams({
-      protocol: device.protocol,
-      display_id: String(device.displayId),
-      port: String(device.port),
-    });
-    const response = await fetchWithTimeout(
-      `${API_BASE}/api/test/${encodeURIComponent(device.ip)}?${params.toString()}`,
-    );
-    const data = await parseApiResponse(response);
+    let data;
+    if (agentId) {
+      data = await executeRemoteJob(device, 'test', {
+        ...toPayload(device),
+      });
+    } else {
+      const params = new URLSearchParams({
+        protocol: device.protocol,
+        display_id: String(device.displayId),
+        port: String(device.port),
+      });
+      const response = await fetchWithTimeout(
+        `${API_BASE}/api/test/${encodeURIComponent(device.ip)}?${params.toString()}`,
+      );
+      data = await parseApiResponse(response);
 
-    if (!response.ok) {
-      throw new Error(data.detail || 'Offline');
+      if (!response.ok) {
+        throw new Error(data.detail || 'Offline');
+      }
     }
 
     device.status = 'online';
@@ -1459,6 +1585,7 @@ const addDevice = () => {
     port: target.port,
     displayId: Number(addDisplayId.value) || 0,
     protocol: addProtocol.value,
+    agentId: addAgentId.value.trim(),
     site: addSite.value.trim(),
     city: addCity.value.trim(),
     zone: addZone.value.trim(),
@@ -1479,6 +1606,7 @@ const addDevice = () => {
   addPort.value = '';
   addDisplayId.value = '';
   addProtocol.value = 'AUTO';
+  addAgentId.value = '';
   addSite.value = '';
   addCity.value = '';
   addZone.value = '';
@@ -1679,17 +1807,29 @@ const runPower = async (command) => {
   isPowerBusy.value = true;
   try {
     appStatus.value = `Sending ${command.toUpperCase()}...`;
-    const params = new URLSearchParams({
-      protocol: selectedDevice.value.protocol,
-      display_id: String(selectedDevice.value.displayId),
-      port: String(selectedDevice.value.port),
-    });
-    const response = await fetch(
-      `${API_BASE}/api/tv/${encodeURIComponent(selectedDevice.value.ip)}/${command}?${params.toString()}`,
-    );
-    const data = await parseApiResponse(response);
-    if (!response.ok) {
-      throw new Error(data.detail || 'Power command failed');
+    const agentId = getDeviceAgentId(selectedDevice.value);
+    let data;
+    if (agentId) {
+      data = await executeRemoteJob(selectedDevice.value, 'tv', {
+        ip: selectedDevice.value.ip,
+        command,
+        display_id: Number(selectedDevice.value.displayId),
+        port: Number(selectedDevice.value.port),
+        protocol: selectedDevice.value.protocol,
+      });
+    } else {
+      const params = new URLSearchParams({
+        protocol: selectedDevice.value.protocol,
+        display_id: String(selectedDevice.value.displayId),
+        port: String(selectedDevice.value.port),
+      });
+      const response = await fetch(
+        `${API_BASE}/api/tv/${encodeURIComponent(selectedDevice.value.ip)}/${command}?${params.toString()}`,
+      );
+      data = await parseApiResponse(response);
+      if (!response.ok) {
+        throw new Error(data.detail || 'Power command failed');
+      }
     }
     appStatus.value = `Power ${command.toUpperCase()} sent`;
     pushLog(
@@ -1774,6 +1914,20 @@ const executeMdcCommand = async (command, operation, args = []) => {
     };
 
     const submitMdcExecute = async (requestPayload) => {
+      const agentId = getDeviceAgentId(selectedDevice.value);
+
+      if (agentId) {
+        const remoteData = await executeRemoteJob(
+          selectedDevice.value,
+          'mdc_execute',
+          requestPayload,
+        );
+        if (!remoteData || typeof remoteData !== 'object') {
+          throw new Error('MDC command failed (invalid remote response)');
+        }
+        return remoteData;
+      }
+
       const response = await fetch(`${API_BASE}/api/mdc/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1940,16 +2094,25 @@ const runConsumerKeyQuickAction = async (keys, repeat = 1) => {
       };
 
       try {
-        const response = await fetch(`${API_BASE}/api/consumer/key`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        const data = await parseApiResponse(response);
-        if (!response.ok) {
-          throw new Error(data.detail || 'Consumer key failed');
+        const agentId = getDeviceAgentId(selectedDevice.value);
+        if (agentId) {
+          sentData = await executeRemoteJob(
+            selectedDevice.value,
+            'consumer_key',
+            payload,
+          );
+        } else {
+          const response = await fetch(`${API_BASE}/api/consumer/key`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          const data = await parseApiResponse(response);
+          if (!response.ok) {
+            throw new Error(data.detail || 'Consumer key failed');
+          }
+          sentData = data;
         }
-        sentData = data;
         lastError = null;
         break;
       } catch (error) {
@@ -2188,6 +2351,10 @@ onMounted(async () => {
               <InputText v-model="addIp" placeholder="IP" />
               <InputText v-model="addPort" placeholder="Port" />
               <InputText v-model="addDisplayId" placeholder="Display ID" />
+              <InputText
+                v-model="addAgentId"
+                placeholder="Agent ID (Option B)"
+              />
               <Select v-model="addProtocol" :options="protocolOptions" />
               <Button
                 label="Detect Connection"
@@ -2380,6 +2547,10 @@ onMounted(async () => {
               <InputText v-model="selectedDevice.ip" />
               <InputText v-model="selectedDevice.port" />
               <InputText v-model="selectedDevice.displayId" />
+              <InputText
+                v-model="selectedDevice.agentId"
+                placeholder="Agent ID (Option B)"
+              />
               <Select
                 v-model="selectedDevice.protocol"
                 :options="protocolOptions"

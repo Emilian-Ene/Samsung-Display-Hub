@@ -1,8 +1,10 @@
 import asyncio
 import os
+from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from samsung_mdc import MDC
@@ -15,6 +17,13 @@ except ImportError:
 app = FastAPI(title="Samsung TV Control API")
 
 CONNECTION_TEST_TIMEOUT_SECONDS = float(os.getenv("CONNECTION_TEST_TIMEOUT_SECONDS", "8"))
+AGENT_SHARED_SECRET = os.getenv("AGENT_SHARED_SECRET", "").strip()
+CLOUD_API_KEY = os.getenv("CLOUD_API_KEY", "").strip()
+
+_remote_lock = asyncio.Lock()
+_remote_jobs: dict[str, dict[str, Any]] = {}
+_remote_queue_by_agent: dict[str, list[str]] = {}
+_agent_state: dict[str, dict[str, Any]] = {}
 
 frontend_origins = [
     origin.strip()
@@ -70,6 +79,42 @@ class MdcExecuteRequest(ConnectionRequest):
 class ConsumerKeyRequest(ConnectionRequest):
     key: str
     repeat: int = Field(default=1, ge=1, le=20)
+
+
+class RemoteEnqueueRequest(BaseModel):
+    agent_id: str = Field(min_length=1, max_length=128)
+    kind: str = Field(min_length=1, max_length=64)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentHeartbeatRequest(BaseModel):
+    version: str | None = None
+    hostname: str | None = None
+    local_backend_url: str | None = None
+
+
+class AgentPollRequest(BaseModel):
+    max_jobs: int = Field(default=5, ge=1, le=50)
+
+
+class AgentJobResultRequest(BaseModel):
+    status: str = Field(min_length=1, max_length=32)
+    result: dict[str, Any] | None = None
+    error: str | None = None
+
+
+def _utcnow_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _assert_cloud_api_key(x_api_key: str | None) -> None:
+    if CLOUD_API_KEY and x_api_key != CLOUD_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key.")
+
+
+def _assert_agent_secret(x_agent_token: str | None) -> None:
+    if AGENT_SHARED_SECRET and x_agent_token != AGENT_SHARED_SECRET:
+        raise HTTPException(status_code=401, detail="Invalid agent token.")
 
 
 def resolve_protocol(protocol: str, port: int) -> str:
@@ -391,6 +436,182 @@ async def execute_mdc_command(payload: MdcExecuteRequest) -> dict[str, Any]:
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/remote/agents")
+async def list_remote_agents(
+    x_api_key: str | None = Header(default=None),
+) -> dict[str, list[dict[str, Any]]]:
+    _assert_cloud_api_key(x_api_key)
+
+    agents: list[dict[str, Any]] = []
+    async with _remote_lock:
+        for agent_id, info in sorted(_agent_state.items(), key=lambda item: item[0]):
+            queue_depth = len(_remote_queue_by_agent.get(agent_id, []))
+            agents.append(
+                {
+                    "agent_id": agent_id,
+                    "last_seen": info.get("last_seen"),
+                    "version": info.get("version"),
+                    "hostname": info.get("hostname"),
+                    "local_backend_url": info.get("local_backend_url"),
+                    "queue_depth": queue_depth,
+                }
+            )
+
+    return {"agents": agents}
+
+
+@app.post("/api/remote/jobs")
+async def enqueue_remote_job(
+    payload: RemoteEnqueueRequest,
+    x_api_key: str | None = Header(default=None),
+) -> dict[str, Any]:
+    _assert_cloud_api_key(x_api_key)
+
+    job_id = str(uuid4())
+    created_at = _utcnow_iso()
+    job = {
+        "job_id": job_id,
+        "agent_id": payload.agent_id.strip(),
+        "kind": payload.kind.strip().lower(),
+        "payload": payload.payload,
+        "status": "queued",
+        "created_at": created_at,
+        "dispatched_at": None,
+        "finished_at": None,
+        "result": None,
+        "error": None,
+    }
+
+    async with _remote_lock:
+        _remote_jobs[job_id] = job
+        _remote_queue_by_agent.setdefault(job["agent_id"], []).append(job_id)
+
+    return {
+        "status": "queued",
+        "job_id": job_id,
+        "agent_id": job["agent_id"],
+        "kind": job["kind"],
+        "created_at": created_at,
+    }
+
+
+@app.get("/api/remote/jobs/{job_id}")
+async def get_remote_job_status(
+    job_id: str,
+    x_api_key: str | None = Header(default=None),
+) -> dict[str, Any]:
+    _assert_cloud_api_key(x_api_key)
+
+    async with _remote_lock:
+        job = _remote_jobs.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Job not found.")
+        return job
+
+
+@app.post("/api/agent/{agent_id}/heartbeat")
+async def agent_heartbeat(
+    agent_id: str,
+    payload: AgentHeartbeatRequest,
+    x_agent_token: str | None = Header(default=None),
+) -> dict[str, str]:
+    _assert_agent_secret(x_agent_token)
+
+    normalized = agent_id.strip()
+    if not normalized:
+        raise HTTPException(status_code=400, detail="Invalid agent_id.")
+
+    async with _remote_lock:
+        _agent_state[normalized] = {
+            "last_seen": _utcnow_iso(),
+            "version": payload.version,
+            "hostname": payload.hostname,
+            "local_backend_url": payload.local_backend_url,
+        }
+
+    return {"status": "ok", "agent_id": normalized}
+
+
+@app.post("/api/agent/{agent_id}/poll")
+async def agent_poll_jobs(
+    agent_id: str,
+    payload: AgentPollRequest,
+    x_agent_token: str | None = Header(default=None),
+) -> dict[str, Any]:
+    _assert_agent_secret(x_agent_token)
+
+    normalized = agent_id.strip()
+    if not normalized:
+        raise HTTPException(status_code=400, detail="Invalid agent_id.")
+
+    jobs: list[dict[str, Any]] = []
+    async with _remote_lock:
+        queue = _remote_queue_by_agent.get(normalized, [])
+        take = min(payload.max_jobs, len(queue))
+        job_ids = queue[:take]
+        del queue[:take]
+
+        if not queue and normalized in _remote_queue_by_agent:
+            _remote_queue_by_agent.pop(normalized, None)
+
+        for job_id in job_ids:
+            job = _remote_jobs.get(job_id)
+            if job is None or job.get("status") != "queued":
+                continue
+            job["status"] = "dispatched"
+            job["dispatched_at"] = _utcnow_iso()
+            jobs.append(job)
+
+        _agent_state[normalized] = {
+            **_agent_state.get(normalized, {}),
+            "last_seen": _utcnow_iso(),
+        }
+
+    return {"agent_id": normalized, "jobs": jobs}
+
+
+@app.post("/api/agent/{agent_id}/jobs/{job_id}/result")
+async def agent_submit_result(
+    agent_id: str,
+    job_id: str,
+    payload: AgentJobResultRequest,
+    x_agent_token: str | None = Header(default=None),
+) -> dict[str, Any]:
+    _assert_agent_secret(x_agent_token)
+
+    normalized = agent_id.strip()
+    if not normalized:
+        raise HTTPException(status_code=400, detail="Invalid agent_id.")
+
+    status = payload.status.strip().lower()
+    if status not in {"success", "error"}:
+        raise HTTPException(status_code=400, detail="status must be success or error.")
+
+    async with _remote_lock:
+        job = _remote_jobs.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Job not found.")
+
+        if job.get("agent_id") != normalized:
+            raise HTTPException(status_code=403, detail="Job does not belong to this agent.")
+
+        job["status"] = "completed" if status == "success" else "failed"
+        job["finished_at"] = _utcnow_iso()
+        job["result"] = payload.result
+        job["error"] = payload.error
+
+        _agent_state[normalized] = {
+            **_agent_state.get(normalized, {}),
+            "last_seen": _utcnow_iso(),
+        }
+
+    return {
+        "status": "recorded",
+        "job_id": job_id,
+        "job_status": "completed" if status == "success" else "failed",
+    }
 
 
 @app.get("/api/tv/{ip}/{command}")

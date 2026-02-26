@@ -1,0 +1,16 @@
+[Unit]
+Description=Samsung Display Hub Option B Agent
+After=network-online.target samsung-backend.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=paragon-av
+WorkingDirectory=/home/paragon-av/Samsung-Display-Hub/backend
+EnvironmentFile=/etc/samsung-option-b-agent.env
+ExecStart=/home/paragon-av/Samsung-Display-Hub/backend/.venv/bin/python /home/paragon-av/Samsung-Display-Hub/backend/option_b_agent.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

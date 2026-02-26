@@ -1,0 +1,113 @@
+# Option B Setup (Cloud Broker + Local Pi Agent)
+
+This setup lets your public app send commands to TVs that stay in private LANs.
+
+## Architecture
+
+- Cloud backend hosts queue endpoints.
+- Each location runs one Pi **agent**.
+- Agent polls cloud, executes jobs locally against `http://127.0.0.1:8000`, sends result back.
+
+## 1) Cloud backend configuration
+
+Deploy `backend/main.py` to your cloud backend (Render/Railway/etc), then set env:
+
+- `FRONTEND_ORIGINS=https://your-frontend.vercel.app`
+- `CLOUD_API_KEY=<strong-random-value>`
+- `AGENT_SHARED_SECRET=<strong-random-value>`
+
+Start command:
+
+```bash
+uvicorn main:app --host 0.0.0.0 --port $PORT
+```
+
+## 2) Pi local backend (per location)
+
+Run the existing local backend on each Pi (same LAN as TVs):
+
+```bash
+cd backend
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+## 3) Pi agent (per location)
+
+On each Pi, set env and run agent:
+
+```bash
+cd backend
+export CLOUD_BASE_URL=https://your-cloud-backend.example.com
+export AGENT_ID=site-bucharest
+export AGENT_SHARED_SECRET=<same-value-as-cloud>
+export LOCAL_BACKEND_URL=http://127.0.0.1:8000
+python option_b_agent.py
+```
+
+Use a different `AGENT_ID` for each location (e.g. `site-london`, `site-cluj`).
+
+For reboot persistence on Pi, use systemd setup from:
+
+- `backend/PI_SERVER_SETUP_AUTOSTART.md` (section: Option B agent auto start)
+- `backend/systemd/samsung-option-b-agent.service`
+- `backend/systemd/samsung-option-b-agent.env.example`
+
+## Frontend configuration for Option B
+
+In Vercel (or local `frontend/.env`), set:
+
+- `VITE_API_URL=https://your-cloud-backend.example.com`
+- `VITE_CLOUD_API_KEY=<same CLOUD_API_KEY from cloud backend>`
+
+In the dashboard UI, set **Agent ID (Option B)** on each device to match the Pi agent (`AGENT_ID`) at that location.
+
+## 4) Enqueue a job from frontend or script
+
+### Turn TV on (via a specific site agent)
+
+```bash
+curl -X POST "https://your-cloud-backend.example.com/api/remote/jobs" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: <CLOUD_API_KEY>" \
+  -d '{
+    "agent_id": "site-bucharest",
+    "kind": "tv",
+    "payload": {
+      "ip": "192.168.1.122",
+      "command": "on",
+      "display_id": 0,
+      "port": 1515,
+      "protocol": "SIGNAGE_MDC"
+    }
+  }'
+```
+
+### Check job status
+
+```bash
+curl "https://your-cloud-backend.example.com/api/remote/jobs/<job_id>" \
+  -H "x-api-key: <CLOUD_API_KEY>"
+```
+
+### List agents
+
+```bash
+curl "https://your-cloud-backend.example.com/api/remote/agents" \
+  -H "x-api-key: <CLOUD_API_KEY>"
+```
+
+## Supported job kinds
+
+- `tv` -> local `GET /api/tv/{ip}/{on|off}`
+- `test` -> local `GET /api/test/{ip}`
+- `probe` -> local `GET /api/probe/{ip}`
+- `mdc_execute` -> local `POST /api/mdc/execute`
+- `consumer_key` -> local `POST /api/consumer/key`
+- `local_http` -> advanced passthrough local HTTP request
+
+## Important MVP notes
+
+- Queue is currently in-memory in cloud backend. Restarting cloud backend clears queued history.
+- For production durability, move jobs/agents to Redis or Postgres.
+- Keep `CLOUD_API_KEY` and `AGENT_SHARED_SECRET` private.

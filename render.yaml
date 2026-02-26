@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: samsung-display-hub-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: FRONTEND_ORIGINS
+        sync: false
+      - key: CLOUD_API_KEY
+        sync: false
+      - key: AGENT_SHARED_SECRET
+        sync: false
+      - key: CONNECTION_TEST_TIMEOUT_SECONDS
+        value: '8'
