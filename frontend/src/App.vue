@@ -2843,7 +2843,9 @@ onMounted(async () => {
               <Button
                 label="Send Key"
                 :loading="isKeyBusy"
-                :disabled="isDeviceTestBusy || isPowerBusy || isMdcBusy"
+                :disabled="
+                  isDeviceTestBusy || isPowerBusy || isMdcBusy || isKeyBusy
+                "
                 @click="sendConsumerKey"
               />
             </div>
@@ -2853,7 +2855,7 @@ onMounted(async () => {
                 label="HDMI 1"
                 severity="secondary"
                 outlined
-                :loading="isMdcBusy"
+                :loading="isKeyBusy"
                 :disabled="isDeviceTestBusy || isPowerBusy || isKeyBusy"
                 @click="runConsumerHdmiQuickAction(1)"
               />
@@ -2861,7 +2863,7 @@ onMounted(async () => {
                 label="HDMI 2"
                 severity="secondary"
                 outlined
-                :loading="isMdcBusy"
+                :loading="isKeyBusy"
                 :disabled="isDeviceTestBusy || isPowerBusy || isKeyBusy"
                 @click="runConsumerHdmiQuickAction(2)"
               />
@@ -2869,7 +2871,7 @@ onMounted(async () => {
                 label="HDMI 3"
                 severity="secondary"
                 outlined
-                :loading="isMdcBusy"
+                :loading="isKeyBusy"
                 :disabled="isDeviceTestBusy || isPowerBusy || isKeyBusy"
                 @click="runConsumerHdmiQuickAction(3)"
               />
@@ -2877,7 +2879,7 @@ onMounted(async () => {
                 label="HDMI 4"
                 severity="secondary"
                 outlined
-                :loading="isMdcBusy"
+                :loading="isKeyBusy"
                 :disabled="isDeviceTestBusy || isPowerBusy || isKeyBusy"
                 @click="runConsumerHdmiQuickAction(4)"
               />
