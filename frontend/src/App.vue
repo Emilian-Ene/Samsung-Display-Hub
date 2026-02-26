@@ -15,7 +15,8 @@ import Toolbar from 'primevue/toolbar';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
 
-const API_BASE = import.meta.env.VITE_API_URL;
+const API_BASE =
+  import.meta.env.VITE_API_URL || 'https://paragon.taila5270a.ts.net';
 const defaultTvIp = import.meta.env.VITE_DEFAULT_TV_IP || '192.168.1.122';
 const defaultDisplayId = import.meta.env.VITE_DEFAULT_DISPLAY_ID || '1';
 const defaultPort = import.meta.env.VITE_DEFAULT_PORT || '1515';
