@@ -811,6 +811,14 @@ const formatClientError = (error) => {
   return raw;
 };
 
+const formatConnectionToastDetail = (detail) => {
+  const normalized = String(detail || '').toLowerCase();
+  if (normalized.includes('no route to host')) {
+    return 'No route to host';
+  }
+  return detail;
+};
+
 const parseMdcResultSummary = (resultValue) => {
   const text = String(resultValue ?? '').trim();
   if (!text) {
@@ -1547,11 +1555,8 @@ const checkDevice = async (device, options = {}) => {
     if (!isBulk) {
       appStatus.value = `${device.name}: offline`;
       pushLog(`Test failed ${device.name}: ${error.message}`);
-      showToast(
-        'error',
-        'Connection Failed',
-        `${device.name}: ${error.message}`,
-      );
+      const toastDetail = formatConnectionToastDetail(error.message);
+      showToast('error', 'Connection Failed', toastDetail);
     }
   }
 
