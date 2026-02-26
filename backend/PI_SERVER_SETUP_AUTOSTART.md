@@ -1,0 +1,167 @@
+# Raspberry Pi Backend Setup (Start + Auto Start)
+
+This guide sets up the backend on a Raspberry Pi from scratch and enables automatic start after reboot.
+
+## 1) Install prerequisites
+
+```bash
+sudo apt update
+sudo apt install -y python3 python3-pip python3-venv git
+```
+
+## 2) Download project
+
+```bash
+cd ~
+git clone https://github.com/Emilian-Ene/Samsung-Display-Hub.git
+cd ~/Samsung-Display-Hub/backend
+```
+
+## 3) Create virtual environment and install dependencies
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+## 4) Run backend manually (first test)
+
+Set frontend origins (current domain is `https://samsung-display-hub.vercel.app`; change only if your domain changes):
+
+```bash
+export FRONTEND_ORIGINS="https://samsung-display-hub.vercel.app,http://localhost:5173"
+```
+
+Start backend:
+
+```bash
+python -m uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+Health check in another terminal:
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+Expected:
+
+```json
+{ "status": "ok" }
+```
+
+Stop manual run with `Ctrl+C` after test.
+
+---
+
+## 5) Enable auto start with systemd
+
+Find your Pi username:
+
+```bash
+whoami
+```
+
+Username is `paragon-av`.
+
+Create service file:
+
+```bash
+sudo nano /etc/systemd/system/samsung-backend.service
+```
+
+Paste:
+
+```ini
+[Unit]
+Description=Samsung Display Hub Backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=paragon-av
+WorkingDirectory=/home/paragon-av/Samsung-Display-Hub/backend
+Environment=FRONTEND_ORIGINS=https://samsung-display-hub.vercel.app,http://localhost:5173
+ExecStart=/home/paragon-av/Samsung-Display-Hub/backend/.venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Save in nano:
+
+- `Ctrl+O`, `Enter`, `Ctrl+X`
+
+Enable and start:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable samsung-backend
+sudo systemctl start samsung-backend
+```
+
+Check status:
+
+```bash
+sudo systemctl status samsung-backend
+```
+
+Health check again:
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+---
+
+## 6) Useful commands
+
+Restart service:
+
+```bash
+sudo systemctl restart samsung-backend
+```
+
+View logs:
+
+```bash
+sudo journalctl -u samsung-backend -f
+```
+
+Stop service:
+
+```bash
+sudo systemctl stop samsung-backend
+```
+
+Disable auto start:
+
+```bash
+sudo systemctl disable samsung-backend
+```
+
+---
+
+## 7) Common errors
+
+### `status=217/USER`
+
+`User=` in service file is wrong. Set it to your real username from `whoami`.
+
+### `No such file or directory` for `ExecStart`
+
+Path to `.venv` or project folder is wrong. Verify:
+
+```bash
+ls -la /home/paragon-av/Samsung-Display-Hub/backend/.venv/bin/python
+```
+
+### `API URL Missing` in frontend
+
+Set Vercel env var:
+
+- `VITE_API_URL=https://paragon.taila5270a.ts.net`
