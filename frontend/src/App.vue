@@ -1838,15 +1838,18 @@ const effectiveProtocolForDevice = (device) => {
 
 const executeMdcCommand = async (command, operation, args = []) => {
   if (isMdcBusy.value) {
+    pushLog('MDC command skipped: another MDC command is already running');
     return null;
   }
 
   if (!selectedDevice.value) {
+    pushLog('MDC command blocked: no device selected');
     showToast('warn', 'No Device Selected', 'Select a device first');
     return null;
   }
 
   if (!command) {
+    pushLog('MDC command blocked: missing command name');
     showToast('warn', 'Missing Field', 'Select an MDC command first');
     return null;
   }
@@ -1860,6 +1863,12 @@ const executeMdcCommand = async (command, operation, args = []) => {
       args,
       operation,
     };
+    const argsText = Array.isArray(args)
+      ? args.map((value) => String(value)).join(', ')
+      : '';
+    pushLog(
+      `MDC request ${command} (${operation}) args=[${argsText || '-'}] on ${selectedDevice.value.ip}:${selectedDevice.value.port} id=${selectedDevice.value.displayId}`,
+    );
 
     const submitMdcExecute = async (requestPayload) => {
       const agentId = getDeviceAgentId(selectedDevice.value);
