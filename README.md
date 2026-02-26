@@ -53,6 +53,18 @@
 
 Vercel auto-detects Vite and deploys it.
 
+## Production for private LAN screens (recommended)
+
+If your screens are in a private network (for example `192.168.x.x`), use:
+
+- Backend on Raspberry Pi in the same LAN as screens
+- Public frontend on Vercel
+- Tailscale Funnel on Pi to expose backend over HTTPS
+
+Full step-by-step guide:
+
+- `backend/PI_TAILSCALE_VERCEL_SETUP.md`
+
 ## Local run
 
 ### Backend
