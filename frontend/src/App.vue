@@ -70,6 +70,7 @@ const isDeviceTestBusy = ref(false);
 const isPowerBusy = ref(false);
 const isMdcBusy = ref(false);
 const isKeyBusy = ref(false);
+const activeConsumerAction = ref('');
 const volumeLevel = ref(50);
 const brightnessLevel = ref(50);
 const isCommandInfoOpen = ref(false);
@@ -2070,7 +2071,11 @@ const runMuteQuickAction = async (isOn) => {
   );
 };
 
-const runConsumerKeyQuickAction = async (keys, repeat = 1) => {
+const runConsumerKeyQuickAction = async (
+  keys,
+  repeat = 1,
+  actionKey = 'send',
+) => {
   if (isKeyBusy.value) {
     return;
   }
@@ -2095,6 +2100,7 @@ const runConsumerKeyQuickAction = async (keys, repeat = 1) => {
   }
 
   isKeyBusy.value = true;
+  activeConsumerAction.value = actionKey;
   try {
     let sentData = null;
     let lastError = null;
@@ -2152,19 +2158,20 @@ const runConsumerKeyQuickAction = async (keys, repeat = 1) => {
     showToast('error', 'Send Key Failed', detail);
   } finally {
     isKeyBusy.value = false;
+    activeConsumerAction.value = '';
   }
 };
 
 const runConsumerHdmiQuickAction = async (hdmiIndex) => {
-  await runConsumerKeyQuickAction([
-    `KEY_HDMI${hdmiIndex}`,
-    'KEY_HDMI',
-    'KEY_SOURCE',
-  ]);
+  await runConsumerKeyQuickAction(
+    [`KEY_HDMI${hdmiIndex}`, 'KEY_HDMI', 'KEY_SOURCE'],
+    1,
+    `hdmi-${hdmiIndex}`,
+  );
 };
 
 const runConsumerPowerQuickAction = async () => {
-  await runConsumerKeyQuickAction('KEY_POWER');
+  await runConsumerKeyQuickAction('KEY_POWER', 1, 'power-toggle');
 };
 
 const setVolumeFromSlider = async () => {
@@ -2254,7 +2261,7 @@ const sendConsumerKey = async () => {
     return;
   }
 
-  await runConsumerKeyQuickAction(consumerKey.value, repeat);
+  await runConsumerKeyQuickAction(consumerKey.value, repeat, 'send');
 };
 
 onMounted(async () => {
@@ -2842,7 +2849,7 @@ onMounted(async () => {
               <InputText v-model="consumerRepeat" placeholder="Repeat" />
               <Button
                 label="Send Key"
-                :loading="isKeyBusy"
+                :loading="isKeyBusy && activeConsumerAction === 'send'"
                 :disabled="
                   isDeviceTestBusy || isPowerBusy || isMdcBusy || isKeyBusy
                 "
@@ -2855,7 +2862,7 @@ onMounted(async () => {
                 label="HDMI 1"
                 severity="secondary"
                 outlined
-                :loading="isKeyBusy"
+                :loading="isKeyBusy && activeConsumerAction === 'hdmi-1'"
                 :disabled="isDeviceTestBusy || isPowerBusy || isKeyBusy"
                 @click="runConsumerHdmiQuickAction(1)"
               />
@@ -2863,7 +2870,7 @@ onMounted(async () => {
                 label="HDMI 2"
                 severity="secondary"
                 outlined
-                :loading="isKeyBusy"
+                :loading="isKeyBusy && activeConsumerAction === 'hdmi-2'"
                 :disabled="isDeviceTestBusy || isPowerBusy || isKeyBusy"
                 @click="runConsumerHdmiQuickAction(2)"
               />
@@ -2871,7 +2878,7 @@ onMounted(async () => {
                 label="HDMI 3"
                 severity="secondary"
                 outlined
-                :loading="isKeyBusy"
+                :loading="isKeyBusy && activeConsumerAction === 'hdmi-3'"
                 :disabled="isDeviceTestBusy || isPowerBusy || isKeyBusy"
                 @click="runConsumerHdmiQuickAction(3)"
               />
@@ -2879,7 +2886,7 @@ onMounted(async () => {
                 label="HDMI 4"
                 severity="secondary"
                 outlined
-                :loading="isKeyBusy"
+                :loading="isKeyBusy && activeConsumerAction === 'hdmi-4'"
                 :disabled="isDeviceTestBusy || isPowerBusy || isKeyBusy"
                 @click="runConsumerHdmiQuickAction(4)"
               />
@@ -2887,7 +2894,7 @@ onMounted(async () => {
                 label="Power ON/OFF"
                 severity="secondary"
                 outlined
-                :loading="isKeyBusy"
+                :loading="isKeyBusy && activeConsumerAction === 'power-toggle'"
                 :disabled="isDeviceTestBusy || isMdcBusy || isKeyBusy"
                 @click="runConsumerPowerQuickAction"
               />
