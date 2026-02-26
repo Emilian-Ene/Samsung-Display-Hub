@@ -1,0 +1,11 @@
+[Unit]
+Description=Samsung Display Hub Auto Update
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/samsung-auto-update.sh
+
+[Install]
+WantedBy=multi-user.target

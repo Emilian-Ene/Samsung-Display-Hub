@@ -267,3 +267,45 @@ Repo templates are available here:
 
 - `backend/systemd/samsung-option-b-agent.service`
 - `backend/systemd/samsung-option-b-agent.env.example`
+
+---
+
+## 10) Optional auto update from Git (every 5 minutes)
+
+If you want Pi to auto-pull latest `main` and restart services automatically:
+
+Install script:
+
+```bash
+sudo cp /home/paragon-av/Samsung-Display-Hub/backend/systemd/samsung-auto-update.sh /usr/local/bin/samsung-auto-update.sh
+sudo chmod +x /usr/local/bin/samsung-auto-update.sh
+```
+
+Install service + timer:
+
+```bash
+sudo cp /home/paragon-av/Samsung-Display-Hub/backend/systemd/samsung-auto-update.service /etc/systemd/system/samsung-auto-update.service
+sudo cp /home/paragon-av/Samsung-Display-Hub/backend/systemd/samsung-auto-update.timer /etc/systemd/system/samsung-auto-update.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now samsung-auto-update.timer
+```
+
+Check timer status:
+
+```bash
+systemctl status samsung-auto-update.timer --no-pager
+systemctl list-timers --all | grep samsung-auto-update
+```
+
+Run one manual update now:
+
+```bash
+sudo systemctl start samsung-auto-update.service
+sudo journalctl -u samsung-auto-update.service -n 50 --no-pager
+```
+
+Stop/disable later:
+
+```bash
+sudo systemctl disable --now samsung-auto-update.timer
+```
