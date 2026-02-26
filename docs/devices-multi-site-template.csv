@@ -1,0 +1,7 @@
+name,ip,port,displayId,protocol,agentId,site,city,zone,area,description
+Bucharest Screen 01,192.168.10.101,1515,0,SIGNAGE_MDC,site-bucharest,Bucharest,Bucharest,Mall,Entrance,Main entrance left
+Bucharest Screen 02,192.168.10.102,1515,0,SIGNAGE_MDC,site-bucharest,Bucharest,Bucharest,Mall,FoodCourt,Promo wall
+London Screen 01,192.168.20.101,1515,0,SIGNAGE_MDC,site-london,London,London,Airport,Gate-A,Gate area signage
+London Screen 02,192.168.20.102,1515,0,SIGNAGE_MDC,site-london,London,London,Airport,Gate-B,Flight info backup
+Berlin Screen 01,192.168.30.101,1515,0,SIGNAGE_MDC,site-berlin,Berlin,Berlin,Station,Platform-1,Platform info
+Berlin Screen 02,192.168.30.102,1515,0,SIGNAGE_MDC,site-berlin,Berlin,Berlin,Station,Platform-2,Platform ads

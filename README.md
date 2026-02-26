@@ -67,6 +67,8 @@ Full step-by-step guide:
 - `backend/PI_SERVER_SETUP_AUTOSTART.md`
 - `backend/OPTION_B_SETUP.md` (cloud broker + Pi agents)
 - `backend/RENDER_SETUP.md` (deploy backend on Render)
+- `docs/MULTI_SITE_AGENT_ROUTING.md` (how Agent ID routes commands to the correct Pi)
+- `docs/devices-multi-site-template.csv` (ready CSV import template for multi-site screens)
 
 For multiple locations/Pis, see the **Multi-location setup** section in:
 
