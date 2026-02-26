@@ -169,6 +169,53 @@ def _parse_datetime_arg(raw_value: str) -> datetime:
 
 def _coerce_mdc_field_value(raw_value: Any, field: Any) -> Any:
     field_type = type(field).__name__.lower()
+    enum_obj = getattr(field, "enum", None)
+
+    if field_type == "bitmask":
+        values: list[Any]
+        if isinstance(raw_value, str):
+            values = [
+                token.strip()
+                for token in raw_value.split(",")
+                if token.strip().strip("[]")
+            ]
+        elif isinstance(raw_value, (list, tuple, set)):
+            values = list(raw_value)
+        else:
+            values = [raw_value]
+
+        if not enum_obj:
+            return values
+
+        enum_name_to_value = {member.name.upper(): int(member.value) for member in enum_obj}
+        coerced_values: list[int] = []
+        for item in values:
+            if isinstance(item, bool):
+                coerced_values.append(int(item))
+                continue
+
+            if isinstance(item, (int, float)):
+                coerced_values.append(int(item))
+                continue
+
+            token = str(item).strip()
+            if not token:
+                continue
+
+            if token.upper() in enum_name_to_value:
+                coerced_values.append(enum_name_to_value[token.upper()])
+                continue
+
+            try:
+                coerced_values.append(int(token))
+            except ValueError as exc:
+                allowed = ", ".join(enum_name_to_value.keys())
+                raise ValueError(
+                    f"Invalid bitmask value '{token}'. Allowed values: {allowed}."
+                ) from exc
+
+        return coerced_values
+
     if not isinstance(raw_value, str):
         return raw_value
 
