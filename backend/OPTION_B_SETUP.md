@@ -65,6 +65,16 @@ For reboot persistence on Pi, use systemd setup from:
 - `backend/systemd/samsung-option-b-agent.service`
 - `backend/systemd/samsung-option-b-agent.env.example`
 
+To prevent Pi idle/sleep behavior and Wi-Fi auto power-save (recommended for stable polling), run once on each Pi:
+
+```bash
+sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
+sudo iw dev wlan0 set power_save off
+sudo mkdir -p /etc/NetworkManager/conf.d
+printf "[connection]\nwifi.powersave=2\n" | sudo tee /etc/NetworkManager/conf.d/wifi-powersave.conf >/dev/null
+sudo systemctl restart NetworkManager
+```
+
 ## Frontend configuration for Option B
 
 In Vercel (or local `frontend/.env`), set:

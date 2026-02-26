@@ -149,6 +149,32 @@ The Pi can reach these private IPs because it is inside the same LAN.
 - Keep Pi powered on and connected to LAN/Tailscale.
 - `FRONTEND_ORIGINS` must include your Vercel domain.
 
+### Prevent Pi sleep and Wi-Fi auto power-save (recommended)
+
+Run once on the Pi:
+
+```bash
+sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
+sudo iw dev wlan0 set power_save off
+sudo mkdir -p /etc/NetworkManager/conf.d
+printf "[connection]\nwifi.powersave=2\n" | sudo tee /etc/NetworkManager/conf.d/wifi-powersave.conf >/dev/null
+sudo systemctl restart NetworkManager
+```
+
+If your Pi uses `dhcpcd`, also add:
+
+```bash
+echo "interface wlan0\n  wireless_power_save off" | sudo tee -a /etc/dhcpcd.conf
+sudo systemctl restart dhcpcd
+```
+
+Quick checks:
+
+```bash
+iw dev wlan0 get power_save
+systemctl is-enabled sleep.target suspend.target hibernate.target hybrid-sleep.target
+```
+
 ---
 
 ## 6) Testing links (exact URLs)
