@@ -278,7 +278,9 @@ Install script:
 
 ```bash
 sudo cp /home/paragon-av/Samsung-Display-Hub/backend/systemd/samsung-auto-update.sh /usr/local/bin/samsung-auto-update.sh
+sudo sed -i 's/\r$//' /usr/local/bin/samsung-auto-update.sh
 sudo chmod +x /usr/local/bin/samsung-auto-update.sh
+bash -n /usr/local/bin/samsung-auto-update.sh
 ```
 
 Install service + timer:
