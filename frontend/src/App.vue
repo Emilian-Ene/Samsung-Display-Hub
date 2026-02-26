@@ -2187,10 +2187,7 @@ onMounted(async () => {
               <InputText v-model="addIp" placeholder="IP" />
               <InputText v-model="addPort" placeholder="Port" />
               <InputText v-model="addDisplayId" placeholder="Display ID" />
-              <InputText
-                v-model="addAgentId"
-                placeholder="Agent ID (Option B)"
-              />
+              <InputText v-model="addAgentId" placeholder="Agent ID" />
               <Select v-model="addProtocol" :options="protocolOptions" />
               <Button
                 label="Detect Connection"
@@ -2385,7 +2382,7 @@ onMounted(async () => {
               <InputText v-model="selectedDevice.displayId" />
               <InputText
                 v-model="selectedDevice.agentId"
-                placeholder="Agent ID (Option B)"
+                placeholder="Agent ID"
               />
               <Select
                 v-model="selectedDevice.protocol"

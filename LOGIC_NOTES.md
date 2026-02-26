@@ -26,7 +26,7 @@ This project is intentionally focused on Samsung MDC control only.
    - Frontend calls `GET /api/probe/{ip}`
    - Backend probes MDC port (1515) and verifies status call
 
-## Remote agent mode (Option B)
+## Remote agent mode
 
 - Frontend can enqueue remote jobs to cloud backend.
 - Pi agent polls jobs and executes local MDC endpoints.

@@ -48,6 +48,17 @@ python option_b_agent.py
 
 Use a different `AGENT_ID` for each location (e.g. `site-london`, `site-cluj`).
 
+Recommended naming rule (important):
+
+- `AGENT_ID` = Pi hostname = Tailscale device name
+- Keep the same exact value in all three places for each Pi
+
+Example for one site:
+
+- Pi hostname: `site-bucharest`
+- Tailscale device name: `site-bucharest`
+- `AGENT_ID=site-bucharest`
+
 For reboot persistence on Pi, use systemd setup from:
 
 - `backend/PI_SERVER_SETUP_AUTOSTART.md` (section: Option B agent auto start)
@@ -61,7 +72,9 @@ In Vercel (or local `frontend/.env`), set:
 - `VITE_API_URL=https://your-cloud-backend.example.com`
 - `VITE_CLOUD_API_KEY=<same CLOUD_API_KEY from cloud backend>`
 
-In the dashboard UI, set **Agent ID (Option B)** on each device to match the Pi agent (`AGENT_ID`) at that location.
+In the dashboard UI, set **Agent ID** on each device to match the Pi agent (`AGENT_ID`) at that location.
+
+This value should also match that Pi hostname/Tailscale name to avoid routing confusion.
 
 ## 4) Enqueue a job from frontend or script
 

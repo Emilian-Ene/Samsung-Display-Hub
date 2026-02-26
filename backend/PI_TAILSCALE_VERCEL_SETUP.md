@@ -11,12 +11,57 @@ This setup lets your public Vercel website control Samsung screens in a private 
 
 Vercel calls Pi backend over HTTPS, Pi controls screens locally.
 
+## Fixed values for your project
+
+- GitHub repo: `https://github.com/Emilian-Ene/Samsung-Display-Hub.git`
+- Frontend domain: `https://samsung-display-hub.vercel.app`
+- Cloud backend (Option B): `https://samsung-display-hub.onrender.com`
+- Local backend port on Pi: `8000`
+- MDC device port: `1515`
+
+If you use Option B agent routing for multiple Pis:
+
+- Set one unique name per Pi and reuse it everywhere:
+  - Pi hostname
+  - Tailscale device name
+  - `AGENT_ID`
+- Example: `site-bucharest`
+
+---
+
+## 0) Full copy-paste bootstrap on a new Pi
+
+```bash
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y git curl python3 python3-venv python3-pip
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+
+cd /home/pi
+git clone https://github.com/Emilian-Ene/Samsung-Display-Hub.git
+cd /home/pi/Samsung-Display-Hub/backend
+
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+
+export FRONTEND_ORIGINS="https://samsung-display-hub.vercel.app,http://localhost:5173"
+python -m uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+Health check (new terminal):
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
 ---
 
 ## 1) On Raspberry Pi: run backend
 
 ```bash
-cd /path/to/Samsung-Display-Hub/backend
+cd /home/pi/Samsung-Display-Hub/backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -50,11 +95,13 @@ On Pi (same shell or another shell):
 sudo tailscale funnel --bg 8000
 ```
 
-This prints a public HTTPS URL, for example:
+Read your exact Funnel URL:
 
-- `https://paragon-xxxx.ts.net`
+```bash
+tailscale funnel status
+```
 
-Use that URL as backend API base in Vercel.
+Copy the `https://...ts.net` URL and use it as `VITE_API_URL` in Vercel.
 
 Check from any internet-connected device:
 
@@ -75,6 +122,11 @@ In Vercel project settings -> Environment Variables:
 - `VITE_DEFAULT_PROTOCOL=SIGNAGE_MDC`
 
 Redeploy after saving env vars.
+
+Quick reminder for your existing cloud setup:
+
+- If you want to keep using Render directly (without Funnel), current value is:
+  - `VITE_API_URL=https://samsung-display-hub.onrender.com`
 
 ---
 
@@ -99,6 +151,54 @@ The Pi can reach these private IPs because it is inside the same LAN.
 
 ---
 
+## 6) Testing links (exact URLs)
+
+### Render backend
+
+- Health: `https://samsung-display-hub.onrender.com/health`
+- MDC commands catalog: `https://samsung-display-hub.onrender.com/api/mdc/commands`
+
+Quick test:
+
+```bash
+curl https://samsung-display-hub.onrender.com/health
+```
+
+Expected:
+
+```json
+{ "status": "ok" }
+```
+
+### Vercel frontend
+
+- App URL: `https://samsung-display-hub.vercel.app`
+
+Open in browser and confirm:
+
+- Page loads
+- Devices dashboard visible
+- Logs panel visible
+
+### Pi Funnel backend
+
+- Health: `https://<your-funnel-url>/health`
+- MDC commands catalog: `https://<your-funnel-url>/api/mdc/commands`
+
+Quick test:
+
+```bash
+curl https://<your-funnel-url>/health
+```
+
+Expected:
+
+```json
+{ "status": "ok" }
+```
+
+---
+
 ## Optional: auto start backend on Pi (systemd)
 
 Example service file `/etc/systemd/system/samsung-backend.service`:
@@ -110,9 +210,9 @@ After=network-online.target
 
 [Service]
 User=pi
-WorkingDirectory=/path/to/Samsung-Display-Hub/backend
+WorkingDirectory=/home/pi/Samsung-Display-Hub/backend
 Environment=FRONTEND_ORIGINS=https://samsung-display-hub.vercel.app,http://localhost:5173
-ExecStart=/path/to/Samsung-Display-Hub/backend/.venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 8000
+ExecStart=/home/pi/Samsung-Display-Hub/backend/.venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=3
 

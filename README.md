@@ -65,6 +65,25 @@ Full step-by-step guide:
 
 - `backend/PI_TAILSCALE_VERCEL_SETUP.md`
 - `backend/PI_SERVER_SETUP_AUTOSTART.md`
+
+For multi-Pi routing, use the same identifier per site for:
+
+- Pi hostname
+- Tailscale device name
+- `AGENT_ID` used in backend/frontend
+
+## Quick production checks
+
+- Render backend health: `https://samsung-display-hub.onrender.com/health`
+- Render MDC catalog: `https://samsung-display-hub.onrender.com/api/mdc/commands`
+- Vercel frontend: `https://samsung-display-hub.vercel.app`
+
+Quick API check:
+
+```bash
+curl https://samsung-display-hub.onrender.com/health
+```
+
 - `backend/OPTION_B_SETUP.md` (cloud broker + Pi agents)
 - `backend/RENDER_SETUP.md` (deploy backend on Render)
 - `docs/MULTI_SITE_AGENT_ROUTING.md` (how Agent ID routes commands to the correct Pi)
