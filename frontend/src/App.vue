@@ -1959,11 +1959,12 @@ const executeMdcCommand = async (command, operation, args = []) => {
     pushLog(
       `MDC target: display_ip=${data.tv} display_id=${data.display_id} port=${data.port}`,
     );
-    showToast(
-      'success',
-      'MDC Command Sent',
-      `${data.command} (${data.operation}) executed`,
-    );
+    toast.add({
+      severity: 'success',
+      summary: 'MCD COMAND SUCCEDET',
+      detail: `${data.command} (${data.operation}) executed`,
+      life: 2800,
+    });
     return data;
   } catch (error) {
     const detail = formatClientError(error);
