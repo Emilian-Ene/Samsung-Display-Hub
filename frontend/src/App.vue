@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import Button from 'primevue/button';
 import Card from 'primevue/card';
 import Column from 'primevue/column';
@@ -25,6 +25,8 @@ const cloudApiKey = import.meta.env.VITE_CLOUD_API_KEY || '';
 const STORAGE_KEY = 'samsung-admin-devices-v1';
 const LOGS_STORAGE_KEY = 'samsung-admin-logs-v1';
 const BULK_REFRESH_CONCURRENCY = 8;
+const AGENT_STATUS_REFRESH_INTERVAL_MS = 15000;
+const AGENT_ONLINE_THRESHOLD_MS = 45000;
 const IMPORTANT_TOAST_SEVERITIES = new Set(['warn', 'error']);
 const BRAND_LOGO_URL = '/logo.jpg';
 const confirm = useConfirm();
@@ -37,6 +39,9 @@ const devices = ref([]);
 const appStatus = ref('Ready');
 const commandLogs = ref([]);
 const showBrandLogo = ref(true);
+const agentStatusById = ref({});
+const agentsLastUpdatedAt = ref('-');
+let agentStatusRefreshInterval = null;
 
 const mdcCommands = ref([]);
 const selectedMdcCommand = ref('status');
@@ -593,6 +598,73 @@ const cityFilterItems = computed(() => [
   ...cityOptions.value.map((value) => ({ label: value, value })),
 ]);
 
+const trackedAgentRows = computed(() => {
+  const ids = [
+    ...new Set(
+      devices.value
+        .map((device) => String(device?.agentId || '').trim())
+        .filter((value) => value.length > 0),
+    ),
+  ].sort((left, right) => left.localeCompare(right));
+
+  return ids.map((agentId) => {
+    const entry = agentStatusById.value[agentId] || null;
+    const status = entry?.status || 'unknown';
+    return {
+      agentId,
+      status,
+      severity:
+        status === 'online'
+          ? 'success'
+          : status === 'offline'
+            ? 'danger'
+            : 'secondary',
+      lastSeenLabel: entry?.lastSeenLabel || '-',
+    };
+  });
+});
+
+const parseIsoTimestamp = (isoValue) => {
+  const value = Date.parse(String(isoValue || ''));
+  return Number.isFinite(value) ? value : null;
+};
+
+const toAgentState = (lastSeenRaw) => {
+  const ts = parseIsoTimestamp(lastSeenRaw);
+  if (ts === null) {
+    return {
+      status: 'unknown',
+      lastSeenLabel: '-',
+    };
+  }
+
+  const ageMs = Date.now() - ts;
+  return {
+    status: ageMs <= AGENT_ONLINE_THRESHOLD_MS ? 'online' : 'offline',
+    lastSeenLabel: new Date(ts).toLocaleString(),
+  };
+};
+
+const agentStatusLabelForDevice = (device) => {
+  const agentId = String(device?.agentId || '').trim();
+  if (!agentId) {
+    return 'local';
+  }
+
+  return agentStatusById.value[agentId]?.status || 'unknown';
+};
+
+const agentStatusSeverityForDevice = (device) => {
+  const label = agentStatusLabelForDevice(device);
+  if (label === 'online') {
+    return 'success';
+  }
+  if (label === 'offline') {
+    return 'danger';
+  }
+  return 'secondary';
+};
+
 const statusSeverity = (status) => {
   if (status === 'online') {
     return 'success';
@@ -1136,6 +1208,41 @@ const remoteHeaders = () => {
     headers['x-api-key'] = cloudApiKey;
   }
   return headers;
+};
+
+const fetchRemoteAgents = async ({ silent = false } = {}) => {
+  if (!API_BASE) {
+    return;
+  }
+
+  try {
+    const response = await fetchWithTimeout(`${API_BASE}/api/remote/agents`, {
+      headers: remoteHeaders(),
+    });
+    const data = await parseApiResponse(response);
+    if (!response.ok) {
+      throw new Error(data.detail || 'Failed to load remote agents');
+    }
+
+    const nextState = {};
+    for (const agent of data.agents || []) {
+      const agentId = String(agent?.agent_id || '').trim();
+      if (!agentId) {
+        continue;
+      }
+
+      nextState[agentId] = toAgentState(agent.last_seen);
+    }
+
+    agentStatusById.value = nextState;
+    agentsLastUpdatedAt.value = new Date().toLocaleString();
+  } catch (error) {
+    if (!silent) {
+      const detail = formatClientError(error);
+      pushLog(`Agent status error: ${detail}`);
+      showToast('warn', 'Agent Status', detail);
+    }
+  }
 };
 
 const getDeviceAgentId = (device) => String(device?.agentId || '').trim();
@@ -2249,7 +2356,19 @@ onMounted(async () => {
 
   loadDevices();
   await fetchMdcCommands();
+  await fetchRemoteAgents({ silent: true });
   await refreshAllDevices();
+
+  agentStatusRefreshInterval = window.setInterval(() => {
+    fetchRemoteAgents({ silent: true });
+  }, AGENT_STATUS_REFRESH_INTERVAL_MS);
+});
+
+onUnmounted(() => {
+  if (agentStatusRefreshInterval) {
+    window.clearInterval(agentStatusRefreshInterval);
+    agentStatusRefreshInterval = null;
+  }
 });
 </script>
 
@@ -2421,6 +2540,35 @@ onMounted(async () => {
               /></span>
             </div>
 
+            <div class="agent-status-panel">
+              <div class="agent-status-header">
+                <strong>Agents</strong>
+                <span>Last update: {{ agentsLastUpdatedAt }}</span>
+                <Button
+                  label="Refresh Agent Status"
+                  icon="pi pi-refresh"
+                  severity="secondary"
+                  outlined
+                  @click="fetchRemoteAgents()"
+                />
+              </div>
+
+              <div v-if="trackedAgentRows.length" class="agent-status-list">
+                <div
+                  v-for="agent in trackedAgentRows"
+                  :key="agent.agentId"
+                  class="agent-status-item"
+                >
+                  <span class="agent-status-id">{{ agent.agentId }}</span>
+                  <Tag :value="agent.status" :severity="agent.severity" />
+                  <span class="agent-status-time">{{
+                    agent.lastSeenLabel
+                  }}</span>
+                </div>
+              </div>
+              <p v-else class="feedback">No Agent ID assigned yet.</p>
+            </div>
+
             <DataTable
               v-model:selection="selectedDeviceRows"
               :value="sortedFilteredDevices"
@@ -2460,6 +2608,15 @@ onMounted(async () => {
                 <template #body="{ data }">{{
                   protocolLabel(data.protocol)
                 }}</template>
+              </Column>
+
+              <Column header="Agent ID">
+                <template #body="{ data }">
+                  <Tag
+                    :value="agentStatusLabelForDevice(data)"
+                    :severity="agentStatusSeverityForDevice(data)"
+                  />
+                </template>
               </Column>
 
               <Column>

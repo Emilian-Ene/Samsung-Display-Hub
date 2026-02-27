@@ -1,6 +1,8 @@
-# Auto Update Backend (Next Pi)
+# Auto Update Backend From Git (Next Pi)
 
-Use these commands on a new Pi to enable backend auto-update from Git.
+Use this on a new Pi to auto-update backend code from `origin/main`.
+
+## 1) Install auto-update script + timer
 
 ```bash
 cd /home/paragon-av/Samsung-Display-Hub
@@ -16,10 +18,28 @@ sudo cp ./backend/systemd/samsung-auto-update.timer /etc/systemd/system/
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now samsung-auto-update.timer
+```
 
+## 2) Verify timer is active
+
+```bash
 systemctl status samsung-auto-update.timer --no-pager
+systemctl list-timers --all | grep samsung-auto-update
+```
+
+You should see the next run in about 5 minutes.
+
+## 3) Run one update now (no wait)
+
+```bash
 sudo systemctl start samsung-auto-update.service
 sudo journalctl -u samsung-auto-update.service -n 50 --no-pager
+```
+
+## 4) Watch updates live
+
+```bash
+sudo journalctl -u samsung-auto-update.service -f
 ```
 
 ## What this does
