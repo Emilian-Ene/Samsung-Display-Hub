@@ -1845,7 +1845,15 @@ const refreshAllDevices = async () => {
 };
 
 const addDevice = () => {
+  const name = addName.value.trim();
+  const agentId = addAgentId.value.trim();
   const target = normalizeTarget(addIp.value, addPort.value);
+
+  if (!name) {
+    appStatus.value = 'Device Name is required';
+    showToast('warn', 'Missing Field', 'Device Name is required');
+    return;
+  }
 
   if (!target.ip) {
     appStatus.value = 'Device IP is required';
@@ -1853,14 +1861,20 @@ const addDevice = () => {
     return;
   }
 
+  if (!agentId) {
+    appStatus.value = 'Agent ID is required';
+    showToast('warn', 'Missing Field', 'Agent ID is required');
+    return;
+  }
+
   const item = {
     id: String(Date.now() + Math.random()),
-    name: addName.value.trim() || `Screen ${devices.value.length + 1}`,
+    name,
     ip: target.ip,
     port: target.port,
     displayId: Number(addDisplayId.value) || 0,
     protocol: addProtocol.value,
-    agentId: addAgentId.value.trim(),
+    agentId,
     site: addSite.value.trim(),
     city: addCity.value.trim(),
     zone: addZone.value.trim(),
@@ -2557,29 +2571,62 @@ onUnmounted(() => {
           <template #title>Add Device</template>
           <template #content>
             <div class="form-grid">
-              <InputText v-model="addName" placeholder="Device name" />
-              <InputText v-model="addSite" placeholder="Site" />
-              <InputText v-model="addCity" placeholder="City" />
-              <InputText v-model="addZone" placeholder="Zone" />
-              <InputText v-model="addArea" placeholder="Area" />
-              <InputText v-model="addDescription" placeholder="Description" />
-              <InputText v-model="addIp" placeholder="IP" />
-              <InputText v-model="addPort" placeholder="Port" />
-              <InputText v-model="addDisplayId" placeholder="Display ID" />
-              <Select
-                v-model="addAgentId"
-                :options="detectedAgentOptions"
-                option-label="label"
-                option-value="value"
-                editable
-                placeholder="Select or type Agent ID"
-              />
-              <Select
-                v-model="addProtocol"
-                :options="protocolOptions"
-                option-label="label"
-                option-value="value"
-              />
+              <div class="field-stack">
+                <label class="field-label">Device Name</label>
+                <InputText v-model="addName" placeholder="Device name" />
+              </div>
+              <div class="field-stack">
+                <label class="field-label">Site</label>
+                <InputText v-model="addSite" placeholder="Site" />
+              </div>
+              <div class="field-stack">
+                <label class="field-label">City</label>
+                <InputText v-model="addCity" placeholder="City" />
+              </div>
+              <div class="field-stack">
+                <label class="field-label">Zone</label>
+                <InputText v-model="addZone" placeholder="Zone" />
+              </div>
+              <div class="field-stack">
+                <label class="field-label">Area</label>
+                <InputText v-model="addArea" placeholder="Area" />
+              </div>
+              <div class="field-stack">
+                <label class="field-label">Description</label>
+                <InputText v-model="addDescription" placeholder="Description" />
+              </div>
+              <div class="field-stack">
+                <label class="field-label">IP</label>
+                <InputText v-model="addIp" placeholder="IP" />
+              </div>
+              <div class="field-stack">
+                <label class="field-label">Port</label>
+                <InputText v-model="addPort" placeholder="Port" />
+              </div>
+              <div class="field-stack">
+                <label class="field-label">Display ID</label>
+                <InputText v-model="addDisplayId" placeholder="Display ID" />
+              </div>
+              <div class="field-stack">
+                <label class="field-label">Agent ID</label>
+                <Select
+                  v-model="addAgentId"
+                  :options="detectedAgentOptions"
+                  option-label="label"
+                  option-value="value"
+                  editable
+                  placeholder="Select or type Agent ID"
+                />
+              </div>
+              <div class="field-stack">
+                <label class="field-label">Protocol</label>
+                <Select
+                  v-model="addProtocol"
+                  :options="protocolOptions"
+                  option-label="label"
+                  option-value="value"
+                />
+              </div>
               <Button
                 label="Auto Detect Agent"
                 icon="pi pi-compass"
@@ -2816,28 +2863,61 @@ onUnmounted(() => {
                 Edit selected device settings and run connection/power actions.
               </p>
               <div class="form-grid">
-                <InputText v-model="selectedDevice.name" />
-                <InputText v-model="selectedDevice.site" placeholder="Site" />
-                <InputText v-model="selectedDevice.city" placeholder="City" />
-                <InputText v-model="selectedDevice.zone" placeholder="Zone" />
-                <InputText v-model="selectedDevice.area" placeholder="Area" />
-                <InputText
-                  v-model="selectedDevice.description"
-                  placeholder="Description"
-                />
-                <InputText v-model="selectedDevice.ip" />
-                <InputText v-model="selectedDevice.port" />
-                <InputText v-model="selectedDevice.displayId" />
-                <InputText
-                  v-model="selectedDevice.agentId"
-                  placeholder="Agent ID"
-                />
-                <Select
-                  v-model="selectedDevice.protocol"
-                  :options="protocolOptions"
-                  option-label="label"
-                  option-value="value"
-                />
+                <div class="field-stack">
+                  <label class="field-label">Device Name</label>
+                  <InputText v-model="selectedDevice.name" />
+                </div>
+                <div class="field-stack">
+                  <label class="field-label">Site</label>
+                  <InputText v-model="selectedDevice.site" placeholder="Site" />
+                </div>
+                <div class="field-stack">
+                  <label class="field-label">City</label>
+                  <InputText v-model="selectedDevice.city" placeholder="City" />
+                </div>
+                <div class="field-stack">
+                  <label class="field-label">Zone</label>
+                  <InputText v-model="selectedDevice.zone" placeholder="Zone" />
+                </div>
+                <div class="field-stack">
+                  <label class="field-label">Area</label>
+                  <InputText v-model="selectedDevice.area" placeholder="Area" />
+                </div>
+                <div class="field-stack">
+                  <label class="field-label">Description</label>
+                  <InputText
+                    v-model="selectedDevice.description"
+                    placeholder="Description"
+                  />
+                </div>
+                <div class="field-stack">
+                  <label class="field-label">IP</label>
+                  <InputText v-model="selectedDevice.ip" />
+                </div>
+                <div class="field-stack">
+                  <label class="field-label">Port</label>
+                  <InputText v-model="selectedDevice.port" />
+                </div>
+                <div class="field-stack">
+                  <label class="field-label">Display ID</label>
+                  <InputText v-model="selectedDevice.displayId" />
+                </div>
+                <div class="field-stack">
+                  <label class="field-label">Agent ID</label>
+                  <InputText
+                    v-model="selectedDevice.agentId"
+                    placeholder="Agent ID"
+                  />
+                </div>
+                <div class="field-stack">
+                  <label class="field-label">Protocol</label>
+                  <Select
+                    v-model="selectedDevice.protocol"
+                    :options="protocolOptions"
+                    option-label="label"
+                    option-value="value"
+                  />
+                </div>
                 <Button label="Save Changes" @click="saveSelectedDevice" />
               </div>
               <div class="toolbar">

@@ -227,6 +227,18 @@ body {
   gap: 8px;
 }
 
+.field-stack {
+  display: grid;
+  gap: 4px;
+}
+
+.field-label {
+  font-size: 0.78rem;
+  color: #64748b;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
 .form-grid .p-inputtext,
 .form-grid .p-select,
 .form-grid .p-button {
