@@ -1262,16 +1262,6 @@ const fetchRemoteAgents = async ({ silent = false } = {}) => {
     agentStatusById.value = nextState;
     agentsLastUpdatedAt.value = new Date().toLocaleString();
 
-    if (!String(addAgentId.value || '').trim()) {
-      const onlineAgentIds = Object.keys(nextState).filter(
-        (agentId) => nextState[agentId]?.status === 'online',
-      );
-
-      if (onlineAgentIds.length === 1) {
-        addAgentId.value = onlineAgentIds[0];
-      }
-    }
-
     return true;
   } catch (error) {
     if (!silent) {
@@ -1302,7 +1292,9 @@ const refreshAgentStatusManual = async () => {
     const states = Object.values(agentStatusById.value || {});
     const total = states.length;
     const online = states.filter((entry) => entry?.status === 'online').length;
-    const offline = states.filter((entry) => entry?.status === 'offline').length;
+    const offline = states.filter(
+      (entry) => entry?.status === 'offline',
+    ).length;
     appStatus.value = `Agent status updated: ${online} online, ${offline} offline (${total} total)`;
     toast.add({
       severity: 'success',
@@ -2051,7 +2043,8 @@ const openDeviceControl = () => {
   currentView.value = 'device';
 
   if (!selectedDevice.value) {
-    appStatus.value = 'Device Control opened. Add/import a device, then select one.';
+    appStatus.value =
+      'Device Control opened. Add/import a device, then select one.';
   }
 };
 
@@ -2579,7 +2572,7 @@ onUnmounted(() => {
                 option-label="label"
                 option-value="value"
                 editable
-                placeholder="Agent ID"
+                placeholder="Select or type Agent ID"
               />
               <Select
                 v-model="addProtocol"
@@ -2816,371 +2809,376 @@ onUnmounted(() => {
 
       <section v-else-if="currentView === 'device'" class="panel detail-grid">
         <template v-if="selectedDevice">
-        <Card>
-          <template #title>Connection</template>
-          <template #content>
-            <p class="card-help">
-              Edit selected device settings and run connection/power actions.
-            </p>
-            <div class="form-grid">
-              <InputText v-model="selectedDevice.name" />
-              <InputText v-model="selectedDevice.site" placeholder="Site" />
-              <InputText v-model="selectedDevice.city" placeholder="City" />
-              <InputText v-model="selectedDevice.zone" placeholder="Zone" />
-              <InputText v-model="selectedDevice.area" placeholder="Area" />
-              <InputText
-                v-model="selectedDevice.description"
-                placeholder="Description"
-              />
-              <InputText v-model="selectedDevice.ip" />
-              <InputText v-model="selectedDevice.port" />
-              <InputText v-model="selectedDevice.displayId" />
-              <InputText
-                v-model="selectedDevice.agentId"
-                placeholder="Agent ID"
-              />
-              <Select
-                v-model="selectedDevice.protocol"
-                :options="protocolOptions"
-                option-label="label"
-                option-value="value"
-              />
-              <Button label="Save Changes" @click="saveSelectedDevice" />
-            </div>
-            <div class="toolbar">
-              <Button
-                label="Test Connection"
-                icon="pi pi-wifi"
-                :loading="isDeviceTestBusy"
-                :disabled="isPowerBusy || isMdcBusy"
-                @click="runSelectedDeviceTest"
-              />
-              <Button
-                label="Power ON"
-                severity="success"
-                outlined
-                :loading="isPowerBusy"
-                :disabled="isDeviceTestBusy || isMdcBusy"
-                @click="requestPowerAction('on')"
-              />
-              <Button
-                label="Power OFF"
-                severity="danger"
-                outlined
-                :loading="isPowerBusy"
-                :disabled="isDeviceTestBusy || isMdcBusy"
-                @click="requestPowerAction('off')"
-              />
-              <Button
-                label="Back to Dashboard"
-                severity="secondary"
-                text
-                @click="currentView = 'dashboard'"
-              />
-            </div>
-            <p class="feedback">{{ selectedDevice.lastFeedback }}</p>
-          </template>
-        </Card>
-
-        <Card>
-          <template #title>MDC CLI</template>
-          <template #content>
-            <p class="card-help">
-              Run MDC commands, quick actions, and optional argument overrides.
-            </p>
-            <div class="mdc-level-grid">
-              <div class="mdc-level-card">
-                <div class="mdc-level-header">
-                  <span>Volume</span>
-                  <strong>{{ volumeLevel }}</strong>
-                </div>
-                <Slider v-model="volumeLevel" :min="0" :max="100" :step="1" />
-                <Button
-                  label="Set Volume"
-                  icon="pi pi-play"
-                  :loading="isMdcBusy"
-                  :disabled="isDeviceTestBusy || isPowerBusy"
-                  @click="setVolumeFromSlider"
-                />
-              </div>
-
-              <div class="mdc-level-card">
-                <div class="mdc-level-header">
-                  <span>Brightness</span>
-                  <strong>{{ brightnessLevel }}</strong>
-                </div>
-                <Slider
-                  v-model="brightnessLevel"
-                  :min="0"
-                  :max="100"
-                  :step="1"
-                />
-                <Button
-                  label="Set Brightness"
-                  icon="pi pi-play"
-                  :loading="isMdcBusy"
-                  :disabled="isDeviceTestBusy || isPowerBusy"
-                  @click="setBrightnessFromSlider"
-                />
-              </div>
-            </div>
-
-            <div class="quick-actions-row">
-              <Button
-                label="Get Status"
-                icon="pi pi-info-circle"
-                severity="secondary"
-                outlined
-                :loading="isMdcBusy"
-                :disabled="isDeviceTestBusy || isPowerBusy"
-                @click="
-                  runMdcQuickAction({ command: 'status', operation: 'get' })
-                "
-              />
-              <Button
-                label="Mute ON"
-                severity="secondary"
-                outlined
-                :loading="isMdcBusy"
-                :disabled="isDeviceTestBusy || isPowerBusy"
-                @click="runMuteQuickAction(true)"
-              />
-              <Button
-                label="Mute OFF"
-                severity="secondary"
-                outlined
-                :loading="isMdcBusy"
-                :disabled="isDeviceTestBusy || isPowerBusy"
-                @click="runMuteQuickAction(false)"
-              />
-            </div>
-
-            <div class="mdc-cli-stack">
-              <div class="form-grid mdc-cli-controls">
-                <div class="mdc-command-select-wrap">
-                  <Select
-                    v-model="selectedMdcCommand"
-                    :options="mdcCommandOptions"
-                    option-label="label"
-                    option-value="name"
-                    class="mdc-command-select"
-                  />
-                  <Button
-                    icon="pi pi-info-circle"
-                    class="mdc-info-btn"
-                    severity="secondary"
-                    outlined
-                    aria-label="Command information"
-                    :disabled="!selectedMdcCommand"
-                    @click="openCommandInfo"
-                  />
-                </div>
-                <Select v-model="mdcOperation" :options="mdcOperationOptions" />
-                <Button
-                  label="Run CLI Command"
-                  :loading="isMdcBusy"
-                  :disabled="isDeviceTestBusy || isPowerBusy"
-                  @click="runMdcCommand"
-                />
-              </div>
-              <p class="feedback">
-                Final args:
-                {{
-                  effectiveMdcArgs.length
-                    ? effectiveMdcArgs.join(', ')
-                    : '(none)'
-                }}
+          <Card>
+            <template #title>Connection</template>
+            <template #content>
+              <p class="card-help">
+                Edit selected device settings and run connection/power actions.
               </p>
-              <p v-if="selectedCommandMeta" class="feedback">
-                {{ mdcCommandLabel(selectedCommandMeta.name) }} | GET:
-                {{ selectedCommandMeta.supports_get ? 'yes' : 'no' }} | SET:
-                {{ selectedCommandMeta.supports_set ? 'yes' : 'no' }}
-              </p>
-
-              <div v-if="selectedMdcFields.length" class="mdc-args-panel">
-                <div class="mdc-args-title">Arguments</div>
-                <div
-                  v-for="field in selectedMdcFields"
-                  :key="field.name"
-                  class="mdc-arg-row"
-                >
-                  <div class="mdc-arg-label">
-                    <strong>{{ formatFieldLabel(field.name) }}</strong>
-                  </div>
-
-                  <div class="mdc-arg-inputs">
-                    <template
-                      v-if="Array.isArray(field.enum) && field.enum.length"
-                    >
-                      <Select
-                        v-model="mdcFieldValues[field.name]"
-                        :options="field.enum"
-                        placeholder="Select"
-                        class="mdc-arg-select"
-                      />
-                      <span class="mdc-arg-or">Custom value:</span>
-                      <InputText
-                        v-model="mdcFieldValues[field.name]"
-                        placeholder="Value"
-                        class="mdc-arg-manual"
-                      />
-                    </template>
-
-                    <template v-else>
-                      <InputText
-                        v-model="mdcFieldValues[field.name]"
-                        :placeholder="
-                          field.range
-                            ? `${field.range.min}-${field.range.max}`
-                            : 'Value'
-                        "
-                        class="mdc-arg-manual"
-                      />
-                    </template>
-                  </div>
-                </div>
+              <div class="form-grid">
+                <InputText v-model="selectedDevice.name" />
+                <InputText v-model="selectedDevice.site" placeholder="Site" />
+                <InputText v-model="selectedDevice.city" placeholder="City" />
+                <InputText v-model="selectedDevice.zone" placeholder="Zone" />
+                <InputText v-model="selectedDevice.area" placeholder="Area" />
+                <InputText
+                  v-model="selectedDevice.description"
+                  placeholder="Description"
+                />
+                <InputText v-model="selectedDevice.ip" />
+                <InputText v-model="selectedDevice.port" />
+                <InputText v-model="selectedDevice.displayId" />
+                <InputText
+                  v-model="selectedDevice.agentId"
+                  placeholder="Agent ID"
+                />
+                <Select
+                  v-model="selectedDevice.protocol"
+                  :options="protocolOptions"
+                  option-label="label"
+                  option-value="value"
+                />
+                <Button label="Save Changes" @click="saveSelectedDevice" />
               </div>
-
-              <div class="mdc-manual-panel">
-                <div class="mdc-manual-title">Manual Override (optional)</div>
-                <div class="mdc-manual-row">
-                  <span>Values:</span>
-                  <InputText
-                    v-model="mdcArgsText"
-                    placeholder="comma-separated values"
-                    class="mdc-manual-input"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <Dialog
-              v-model:visible="isCommandInfoOpen"
-              modal
-              :draggable="false"
-              header="MDC Command Information"
-              :style="{ width: 'min(720px, 92vw)' }"
-            >
-              <div class="mdc-info-dialog">
-                <p>
-                  <strong>Command:</strong>
-                  {{
-                    selectedMdcCommand
-                      ? mdcCommandLabel(selectedMdcCommand)
-                      : '-'
-                  }}
-                </p>
-                <p><strong>Description:</strong> {{ selectedCommandHelp }}</p>
-                <div v-if="selectedCommandNotes.length">
-                  <strong>Notes:</strong>
-                  <ul class="mdc-info-fields">
-                    <li
-                      v-for="(note, index) in selectedCommandNotes"
-                      :key="`note-${selectedMdcCommand}-${index}`"
-                    >
-                      {{ note }}
-                    </li>
-                  </ul>
-                </div>
-                <div v-if="selectedCommandFormats.length">
-                  <strong>Format Tips:</strong>
-                  <ul class="mdc-info-fields">
-                    <li
-                      v-for="(tip, index) in selectedCommandFormats"
-                      :key="`tip-${selectedMdcCommand}-${index}`"
-                    >
-                      {{ tip }}
-                    </li>
-                  </ul>
-                </div>
-                <p>
-                  <strong>Supports:</strong>
-                  GET {{ selectedCommandMeta?.supports_get ? 'yes' : 'no' }} |
-                  SET {{ selectedCommandMeta?.supports_set ? 'yes' : 'no' }}
-                </p>
-                <div>
-                  <strong>Arguments:</strong>
-                  <ul v-if="selectedMdcFields.length" class="mdc-info-fields">
-                    <li
-                      v-for="field in selectedMdcFields"
-                      :key="`help-${field.name}`"
-                    >
-                      <strong>{{ formatFieldLabel(field.name) }}</strong>
-                      <span
-                        v-if="Array.isArray(field.enum) && field.enum.length"
-                      >
-                        : {{ field.enum.join(' | ') }}
-                      </span>
-                      <span v-else-if="field.range">
-                        : {{ field.range.min }} - {{ field.range.max }}
-                      </span>
-                      <span v-else>: value</span>
-                    </li>
-                  </ul>
-                  <p v-else class="feedback">No arguments required.</p>
-                </div>
-                <p><strong>Example:</strong> {{ selectedCommandExample }}</p>
-              </div>
-            </Dialog>
-          </template>
-        </Card>
-
-        <Card class="logs">
-          <template #title>
-            <div
-              style="
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 0.75rem;
-              "
-            >
-              <span>Logs</span>
-              <div style="display: flex; align-items: center; gap: 0.5rem">
+              <div class="toolbar">
                 <Button
-                  label="Save Logs CSV"
-                  icon="pi pi-download"
-                  size="small"
-                  severity="secondary"
-                  outlined
-                  :disabled="commandLogs.length === 0"
-                  @click="saveLogsCsv"
+                  label="Test Connection"
+                  icon="pi pi-wifi"
+                  :loading="isDeviceTestBusy"
+                  :disabled="isPowerBusy || isMdcBusy"
+                  @click="runSelectedDeviceTest"
                 />
                 <Button
-                  label="Copy Last Log"
-                  icon="pi pi-copy"
-                  size="small"
-                  severity="secondary"
+                  label="Power ON"
+                  severity="success"
                   outlined
-                  :disabled="commandLogs.length === 0"
-                  @click="copyLastLog"
+                  :loading="isPowerBusy"
+                  :disabled="isDeviceTestBusy || isMdcBusy"
+                  @click="requestPowerAction('on')"
                 />
                 <Button
-                  label="Clear Logs"
-                  icon="pi pi-trash"
-                  size="small"
+                  label="Power OFF"
                   severity="danger"
                   outlined
-                  :disabled="commandLogs.length === 0"
-                  @click="clearLogs"
+                  :loading="isPowerBusy"
+                  :disabled="isDeviceTestBusy || isMdcBusy"
+                  @click="requestPowerAction('off')"
+                />
+                <Button
+                  label="Back to Dashboard"
+                  severity="secondary"
+                  text
+                  @click="currentView = 'dashboard'"
                 />
               </div>
-            </div>
-          </template>
-          <template #content>
-            <p class="card-help">
-              Latest command output and troubleshooting messages.
-            </p>
-            <pre>{{ commandLogs.join('\n') }}</pre>
-          </template>
-        </Card>
+              <p class="feedback">{{ selectedDevice.lastFeedback }}</p>
+            </template>
+          </Card>
+
+          <Card>
+            <template #title>MDC CLI</template>
+            <template #content>
+              <p class="card-help">
+                Run MDC commands, quick actions, and optional argument
+                overrides.
+              </p>
+              <div class="mdc-level-grid">
+                <div class="mdc-level-card">
+                  <div class="mdc-level-header">
+                    <span>Volume</span>
+                    <strong>{{ volumeLevel }}</strong>
+                  </div>
+                  <Slider v-model="volumeLevel" :min="0" :max="100" :step="1" />
+                  <Button
+                    label="Set Volume"
+                    icon="pi pi-play"
+                    :loading="isMdcBusy"
+                    :disabled="isDeviceTestBusy || isPowerBusy"
+                    @click="setVolumeFromSlider"
+                  />
+                </div>
+
+                <div class="mdc-level-card">
+                  <div class="mdc-level-header">
+                    <span>Brightness</span>
+                    <strong>{{ brightnessLevel }}</strong>
+                  </div>
+                  <Slider
+                    v-model="brightnessLevel"
+                    :min="0"
+                    :max="100"
+                    :step="1"
+                  />
+                  <Button
+                    label="Set Brightness"
+                    icon="pi pi-play"
+                    :loading="isMdcBusy"
+                    :disabled="isDeviceTestBusy || isPowerBusy"
+                    @click="setBrightnessFromSlider"
+                  />
+                </div>
+              </div>
+
+              <div class="quick-actions-row">
+                <Button
+                  label="Get Status"
+                  icon="pi pi-info-circle"
+                  severity="secondary"
+                  outlined
+                  :loading="isMdcBusy"
+                  :disabled="isDeviceTestBusy || isPowerBusy"
+                  @click="
+                    runMdcQuickAction({ command: 'status', operation: 'get' })
+                  "
+                />
+                <Button
+                  label="Mute ON"
+                  severity="secondary"
+                  outlined
+                  :loading="isMdcBusy"
+                  :disabled="isDeviceTestBusy || isPowerBusy"
+                  @click="runMuteQuickAction(true)"
+                />
+                <Button
+                  label="Mute OFF"
+                  severity="secondary"
+                  outlined
+                  :loading="isMdcBusy"
+                  :disabled="isDeviceTestBusy || isPowerBusy"
+                  @click="runMuteQuickAction(false)"
+                />
+              </div>
+
+              <div class="mdc-cli-stack">
+                <div class="form-grid mdc-cli-controls">
+                  <div class="mdc-command-select-wrap">
+                    <Select
+                      v-model="selectedMdcCommand"
+                      :options="mdcCommandOptions"
+                      option-label="label"
+                      option-value="name"
+                      class="mdc-command-select"
+                    />
+                    <Button
+                      icon="pi pi-info-circle"
+                      class="mdc-info-btn"
+                      severity="secondary"
+                      outlined
+                      aria-label="Command information"
+                      :disabled="!selectedMdcCommand"
+                      @click="openCommandInfo"
+                    />
+                  </div>
+                  <Select
+                    v-model="mdcOperation"
+                    :options="mdcOperationOptions"
+                  />
+                  <Button
+                    label="Run CLI Command"
+                    :loading="isMdcBusy"
+                    :disabled="isDeviceTestBusy || isPowerBusy"
+                    @click="runMdcCommand"
+                  />
+                </div>
+                <p class="feedback">
+                  Final args:
+                  {{
+                    effectiveMdcArgs.length
+                      ? effectiveMdcArgs.join(', ')
+                      : '(none)'
+                  }}
+                </p>
+                <p v-if="selectedCommandMeta" class="feedback">
+                  {{ mdcCommandLabel(selectedCommandMeta.name) }} | GET:
+                  {{ selectedCommandMeta.supports_get ? 'yes' : 'no' }} | SET:
+                  {{ selectedCommandMeta.supports_set ? 'yes' : 'no' }}
+                </p>
+
+                <div v-if="selectedMdcFields.length" class="mdc-args-panel">
+                  <div class="mdc-args-title">Arguments</div>
+                  <div
+                    v-for="field in selectedMdcFields"
+                    :key="field.name"
+                    class="mdc-arg-row"
+                  >
+                    <div class="mdc-arg-label">
+                      <strong>{{ formatFieldLabel(field.name) }}</strong>
+                    </div>
+
+                    <div class="mdc-arg-inputs">
+                      <template
+                        v-if="Array.isArray(field.enum) && field.enum.length"
+                      >
+                        <Select
+                          v-model="mdcFieldValues[field.name]"
+                          :options="field.enum"
+                          placeholder="Select"
+                          class="mdc-arg-select"
+                        />
+                        <span class="mdc-arg-or">Custom value:</span>
+                        <InputText
+                          v-model="mdcFieldValues[field.name]"
+                          placeholder="Value"
+                          class="mdc-arg-manual"
+                        />
+                      </template>
+
+                      <template v-else>
+                        <InputText
+                          v-model="mdcFieldValues[field.name]"
+                          :placeholder="
+                            field.range
+                              ? `${field.range.min}-${field.range.max}`
+                              : 'Value'
+                          "
+                          class="mdc-arg-manual"
+                        />
+                      </template>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="mdc-manual-panel">
+                  <div class="mdc-manual-title">Manual Override (optional)</div>
+                  <div class="mdc-manual-row">
+                    <span>Values:</span>
+                    <InputText
+                      v-model="mdcArgsText"
+                      placeholder="comma-separated values"
+                      class="mdc-manual-input"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <Dialog
+                v-model:visible="isCommandInfoOpen"
+                modal
+                :draggable="false"
+                header="MDC Command Information"
+                :style="{ width: 'min(720px, 92vw)' }"
+              >
+                <div class="mdc-info-dialog">
+                  <p>
+                    <strong>Command:</strong>
+                    {{
+                      selectedMdcCommand
+                        ? mdcCommandLabel(selectedMdcCommand)
+                        : '-'
+                    }}
+                  </p>
+                  <p><strong>Description:</strong> {{ selectedCommandHelp }}</p>
+                  <div v-if="selectedCommandNotes.length">
+                    <strong>Notes:</strong>
+                    <ul class="mdc-info-fields">
+                      <li
+                        v-for="(note, index) in selectedCommandNotes"
+                        :key="`note-${selectedMdcCommand}-${index}`"
+                      >
+                        {{ note }}
+                      </li>
+                    </ul>
+                  </div>
+                  <div v-if="selectedCommandFormats.length">
+                    <strong>Format Tips:</strong>
+                    <ul class="mdc-info-fields">
+                      <li
+                        v-for="(tip, index) in selectedCommandFormats"
+                        :key="`tip-${selectedMdcCommand}-${index}`"
+                      >
+                        {{ tip }}
+                      </li>
+                    </ul>
+                  </div>
+                  <p>
+                    <strong>Supports:</strong>
+                    GET {{ selectedCommandMeta?.supports_get ? 'yes' : 'no' }} |
+                    SET {{ selectedCommandMeta?.supports_set ? 'yes' : 'no' }}
+                  </p>
+                  <div>
+                    <strong>Arguments:</strong>
+                    <ul v-if="selectedMdcFields.length" class="mdc-info-fields">
+                      <li
+                        v-for="field in selectedMdcFields"
+                        :key="`help-${field.name}`"
+                      >
+                        <strong>{{ formatFieldLabel(field.name) }}</strong>
+                        <span
+                          v-if="Array.isArray(field.enum) && field.enum.length"
+                        >
+                          : {{ field.enum.join(' | ') }}
+                        </span>
+                        <span v-else-if="field.range">
+                          : {{ field.range.min }} - {{ field.range.max }}
+                        </span>
+                        <span v-else>: value</span>
+                      </li>
+                    </ul>
+                    <p v-else class="feedback">No arguments required.</p>
+                  </div>
+                  <p><strong>Example:</strong> {{ selectedCommandExample }}</p>
+                </div>
+              </Dialog>
+            </template>
+          </Card>
+
+          <Card class="logs">
+            <template #title>
+              <div
+                style="
+                  display: flex;
+                  align-items: center;
+                  justify-content: space-between;
+                  gap: 0.75rem;
+                "
+              >
+                <span>Logs</span>
+                <div style="display: flex; align-items: center; gap: 0.5rem">
+                  <Button
+                    label="Save Logs CSV"
+                    icon="pi pi-download"
+                    size="small"
+                    severity="secondary"
+                    outlined
+                    :disabled="commandLogs.length === 0"
+                    @click="saveLogsCsv"
+                  />
+                  <Button
+                    label="Copy Last Log"
+                    icon="pi pi-copy"
+                    size="small"
+                    severity="secondary"
+                    outlined
+                    :disabled="commandLogs.length === 0"
+                    @click="copyLastLog"
+                  />
+                  <Button
+                    label="Clear Logs"
+                    icon="pi pi-trash"
+                    size="small"
+                    severity="danger"
+                    outlined
+                    :disabled="commandLogs.length === 0"
+                    @click="clearLogs"
+                  />
+                </div>
+              </div>
+            </template>
+            <template #content>
+              <p class="card-help">
+                Latest command output and troubleshooting messages.
+              </p>
+              <pre>{{ commandLogs.join('\n') }}</pre>
+            </template>
+          </Card>
         </template>
 
         <Card v-else>
           <template #title>Device Control</template>
           <template #content>
             <p class="card-help">
-              No device selected yet. Add or import a device from Dashboard, then click Open to control it.
+              No device selected yet. Add or import a device from Dashboard,
+              then click Open to control it.
             </p>
             <div class="toolbar">
               <Button
