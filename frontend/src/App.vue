@@ -70,6 +70,7 @@ const selectedDeviceRows = ref([]);
 const isDeviceTestBusy = ref(false);
 const isPowerBusy = ref(false);
 const isMdcBusy = ref(false);
+const isAgentRefreshBusy = ref(false);
 const volumeLevel = ref(50);
 const brightnessLevel = ref(50);
 const isCommandInfoOpen = ref(false);
@@ -91,6 +92,18 @@ const selectedDevice = computed(() => {
   return (
     devices.value.find((device) => device.id === selectedDeviceId.value) || null
   );
+});
+
+const currentViewTitle = computed(() => {
+  if (currentView.value === 'agents') {
+    return 'Explore Agents';
+  }
+
+  if (currentView.value === 'device') {
+    return 'Device Control';
+  }
+
+  return 'Dashboard';
 });
 
 const selectedCommandMeta = computed(() => {
@@ -622,6 +635,18 @@ const trackedAgentRows = computed(() => {
       lastSeenLabel: entry?.lastSeenLabel || '-',
     };
   });
+});
+
+const detectedAgentOptions = computed(() => {
+  return Object.keys(agentStatusById.value)
+    .sort((left, right) => left.localeCompare(right))
+    .map((agentId) => {
+      const status = agentStatusById.value[agentId]?.status || 'unknown';
+      return {
+        label: `${agentId} (${status})`,
+        value: agentId,
+      };
+    });
 });
 
 const parseIsoTimestamp = (isoValue) => {
@@ -1212,7 +1237,7 @@ const remoteHeaders = () => {
 
 const fetchRemoteAgents = async ({ silent = false } = {}) => {
   if (!API_BASE) {
-    return;
+    return false;
   }
 
   try {
@@ -1236,13 +1261,98 @@ const fetchRemoteAgents = async ({ silent = false } = {}) => {
 
     agentStatusById.value = nextState;
     agentsLastUpdatedAt.value = new Date().toLocaleString();
+
+    if (!String(addAgentId.value || '').trim()) {
+      const onlineAgentIds = Object.keys(nextState).filter(
+        (agentId) => nextState[agentId]?.status === 'online',
+      );
+
+      if (onlineAgentIds.length === 1) {
+        addAgentId.value = onlineAgentIds[0];
+      }
+    }
+
+    return true;
   } catch (error) {
     if (!silent) {
       const detail = formatClientError(error);
       pushLog(`Agent status error: ${detail}`);
       showToast('warn', 'Agent Status', detail);
     }
+
+    return false;
   }
+};
+
+const refreshAgentStatusManual = async () => {
+  if (isAgentRefreshBusy.value) {
+    return;
+  }
+
+  isAgentRefreshBusy.value = true;
+  appStatus.value = 'Refreshing agent status...';
+
+  try {
+    const ok = await fetchRemoteAgents();
+    if (!ok) {
+      appStatus.value = 'Agent status refresh failed';
+      return;
+    }
+
+    const states = Object.values(agentStatusById.value || {});
+    const total = states.length;
+    const online = states.filter((entry) => entry?.status === 'online').length;
+    const offline = states.filter((entry) => entry?.status === 'offline').length;
+    appStatus.value = `Agent status updated: ${online} online, ${offline} offline (${total} total)`;
+    toast.add({
+      severity: 'success',
+      summary: 'Agent Status Updated',
+      detail: `${online} online, ${offline} offline`,
+      life: 2200,
+    });
+  } finally {
+    isAgentRefreshBusy.value = false;
+  }
+};
+
+const autoDetectAddAgentId = () => {
+  const statuses = agentStatusById.value || {};
+  const allAgentIds = Object.keys(statuses).sort((left, right) =>
+    left.localeCompare(right),
+  );
+
+  if (!allAgentIds.length) {
+    showToast('warn', 'Agent Detect', 'No agents detected from backend yet');
+    return;
+  }
+
+  const onlineAgentIds = allAgentIds.filter(
+    (agentId) => statuses[agentId]?.status === 'online',
+  );
+
+  if (onlineAgentIds.length === 1) {
+    addAgentId.value = onlineAgentIds[0];
+    appStatus.value = `Auto detected Agent ID: ${onlineAgentIds[0]}`;
+    return;
+  }
+
+  if (onlineAgentIds.length > 1) {
+    appStatus.value = `Multiple online agents found (${onlineAgentIds.length}). Select one from Agent ID list.`;
+    showToast(
+      'warn',
+      'Agent Detect',
+      `Multiple online agents found (${onlineAgentIds.length})`,
+    );
+    return;
+  }
+
+  if (allAgentIds.length === 1) {
+    addAgentId.value = allAgentIds[0];
+    appStatus.value = `Auto detected Agent ID: ${allAgentIds[0]}`;
+    return;
+  }
+
+  appStatus.value = `No online agents detected. Select from ${allAgentIds.length} known Agent IDs.`;
 };
 
 const getDeviceAgentId = (device) => String(device?.agentId || '').trim();
@@ -1938,17 +2048,11 @@ const openDevice = (device) => {
 };
 
 const openDeviceControl = () => {
-  if (!selectedDevice.value) {
-    appStatus.value = 'No device selected. Add/import a device or click Open.';
-    showToast(
-      'warn',
-      'No Device Selected',
-      'Add or import a device, then click Open',
-    );
-    return;
-  }
-
   currentView.value = 'device';
+
+  if (!selectedDevice.value) {
+    appStatus.value = 'Device Control opened. Add/import a device, then select one.';
+  }
 };
 
 const runSelectedDeviceTest = async () => {
@@ -2404,12 +2508,20 @@ onUnmounted(() => {
         text
         @click="openDeviceControl"
       />
+      <Button
+        label="Explore Agents"
+        icon="pi pi-sitemap"
+        class="nav-button"
+        :class="{ active: currentView === 'agents' }"
+        text
+        @click="currentView = 'agents'"
+      />
     </aside>
 
     <section class="content">
-      <Toolbar class="top-menu">
+      <Toolbar v-if="currentView === 'dashboard'" class="top-menu">
         <template #start>
-          <div class="top-menu-title">Dashboard</div>
+          <div class="top-menu-title">{{ currentViewTitle }}</div>
         </template>
         <template #end>
           <div class="top-menu-actions">
@@ -2461,12 +2573,26 @@ onUnmounted(() => {
               <InputText v-model="addIp" placeholder="IP" />
               <InputText v-model="addPort" placeholder="Port" />
               <InputText v-model="addDisplayId" placeholder="Display ID" />
-              <InputText v-model="addAgentId" placeholder="Agent ID" />
+              <Select
+                v-model="addAgentId"
+                :options="detectedAgentOptions"
+                option-label="label"
+                option-value="value"
+                editable
+                placeholder="Agent ID"
+              />
               <Select
                 v-model="addProtocol"
                 :options="protocolOptions"
                 option-label="label"
                 option-value="value"
+              />
+              <Button
+                label="Auto Detect Agent"
+                icon="pi pi-compass"
+                severity="secondary"
+                class="detect-connection-btn"
+                @click="autoDetectAddAgentId"
               />
               <Button
                 label="Detect Connection"
@@ -2538,35 +2664,6 @@ onUnmounted(() => {
               <span class="legend-item"
                 ><Tag value="Unknown" severity="secondary"
               /></span>
-            </div>
-
-            <div class="agent-status-panel">
-              <div class="agent-status-header">
-                <strong>Agents</strong>
-                <span>Last update: {{ agentsLastUpdatedAt }}</span>
-                <Button
-                  label="Refresh Agent Status"
-                  icon="pi pi-refresh"
-                  severity="secondary"
-                  outlined
-                  @click="fetchRemoteAgents()"
-                />
-              </div>
-
-              <div v-if="trackedAgentRows.length" class="agent-status-list">
-                <div
-                  v-for="agent in trackedAgentRows"
-                  :key="agent.agentId"
-                  class="agent-status-item"
-                >
-                  <span class="agent-status-id">{{ agent.agentId }}</span>
-                  <Tag :value="agent.status" :severity="agent.severity" />
-                  <span class="agent-status-time">{{
-                    agent.lastSeenLabel
-                  }}</span>
-                </div>
-              </div>
-              <p v-else class="feedback">No Agent ID assigned yet.</p>
             </div>
 
             <DataTable
@@ -2679,7 +2776,46 @@ onUnmounted(() => {
         </Card>
       </section>
 
-      <section v-else-if="selectedDevice" class="panel detail-grid">
+      <section v-else-if="currentView === 'agents'" class="panel">
+        <Card>
+          <template #title>Explore Agents</template>
+          <template #content>
+            <div class="agent-status-panel">
+              <div class="agent-status-header">
+                <strong>Agents</strong>
+                <span>Last update: {{ agentsLastUpdatedAt }}</span>
+                <Button
+                  label="Refresh Agent Status"
+                  icon="pi pi-refresh"
+                  severity="secondary"
+                  outlined
+                  :loading="isAgentRefreshBusy"
+                  :disabled="isAgentRefreshBusy"
+                  @click="refreshAgentStatusManual"
+                />
+              </div>
+
+              <div v-if="trackedAgentRows.length" class="agent-status-list">
+                <div
+                  v-for="agent in trackedAgentRows"
+                  :key="agent.agentId"
+                  class="agent-status-item"
+                >
+                  <span class="agent-status-id">{{ agent.agentId }}</span>
+                  <Tag :value="agent.status" :severity="agent.severity" />
+                  <span class="agent-status-time">{{
+                    agent.lastSeenLabel
+                  }}</span>
+                </div>
+              </div>
+              <p v-else class="feedback">No Agent ID assigned yet.</p>
+            </div>
+          </template>
+        </Card>
+      </section>
+
+      <section v-else-if="currentView === 'device'" class="panel detail-grid">
+        <template v-if="selectedDevice">
         <Card>
           <template #title>Connection</template>
           <template #content>
@@ -3036,6 +3172,24 @@ onUnmounted(() => {
               Latest command output and troubleshooting messages.
             </p>
             <pre>{{ commandLogs.join('\n') }}</pre>
+          </template>
+        </Card>
+        </template>
+
+        <Card v-else>
+          <template #title>Device Control</template>
+          <template #content>
+            <p class="card-help">
+              No device selected yet. Add or import a device from Dashboard, then click Open to control it.
+            </p>
+            <div class="toolbar">
+              <Button
+                label="Go to Dashboard"
+                severity="secondary"
+                text
+                @click="currentView = 'dashboard'"
+              />
+            </div>
           </template>
         </Card>
       </section>
