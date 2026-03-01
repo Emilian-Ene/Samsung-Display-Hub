@@ -43,13 +43,14 @@ On each Pi, set env and run agent:
 ```bash
 cd backend
 export CLOUD_BASE_URL=https://your-cloud-backend.example.com
-export AGENT_ID=site-bucharest
+# Optional override. If not set, agent uses Pi hostname.
+export AGENT_ID=$(hostname)
 export AGENT_SHARED_SECRET=<same-value-as-cloud>
 export LOCAL_BACKEND_URL=http://127.0.0.1:8000
 python option_b_agent.py
 ```
 
-Use a different `AGENT_ID` for each location (e.g. `site-london`, `site-cluj`).
+If `AGENT_ID` is unset, the agent automatically uses the Pi hostname.
 
 Recommended naming rule (important):
 
@@ -60,7 +61,7 @@ Example for one site:
 
 - Pi hostname: `site-bucharest`
 - Tailscale device name: `site-bucharest`
-- `AGENT_ID=site-bucharest`
+- `AGENT_ID=$(hostname)` (or leave empty and auto-use hostname)
 
 For reboot persistence on Pi, use systemd setup from:
 

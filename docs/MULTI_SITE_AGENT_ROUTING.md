@@ -23,9 +23,9 @@ Avoid spaces and special characters.
 
 ## Example with 3 sites x 10 screens
 
-- Pi at Bucharest: `AGENT_ID=site-bucharest`
-- Pi at London: `AGENT_ID=site-london`
-- Pi at Berlin: `AGENT_ID=site-berlin`
+- Pi at Bucharest hostname: `site-bucharest` (leave `AGENT_ID` empty or set `AGENT_ID=$(hostname)`)
+- Pi at London hostname: `site-london` (leave `AGENT_ID` empty or set `AGENT_ID=$(hostname)`)
+- Pi at Berlin hostname: `site-berlin` (leave `AGENT_ID` empty or set `AGENT_ID=$(hostname)`)
 
 For every Bucharest screen, set `agentId=site-bucharest` in the dashboard.
 For every London screen, set `agentId=site-london`.

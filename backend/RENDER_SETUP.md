@@ -36,7 +36,7 @@ Set in Vercel:
 Run one agent per site with unique ID:
 
 - `CLOUD_BASE_URL=https://your-render-service.onrender.com`
-- `AGENT_ID=site-name` (example: `site-bucharest`)
+- `AGENT_ID=$(hostname)` (or leave unset to auto-use Pi hostname)
 - `AGENT_SHARED_SECRET=<same as Render>`
 - `LOCAL_BACKEND_URL=http://127.0.0.1:8000`
 

@@ -201,7 +201,8 @@ Paste values (edit for your deployment):
 
 ```dotenv
 CLOUD_BASE_URL=https://your-render-service.onrender.com
-AGENT_ID=site-bucharest
+# Optional override. If empty, agent uses Pi hostname.
+AGENT_ID=
 AGENT_SHARED_SECRET=replace-with-strong-random-secret
 LOCAL_BACKEND_URL=http://127.0.0.1:8000
 AGENT_POLL_INTERVAL_SECONDS=2
