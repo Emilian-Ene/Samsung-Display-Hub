@@ -1,5 +1,7 @@
 backend/.env
 frontend/.env
+backend/systemd/*.env
+!backend/systemd/*.env.example
 __pycache__/
 *.pyc
 frontend/node_modules/

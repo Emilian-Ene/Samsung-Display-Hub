@@ -12,10 +12,13 @@ This setup lets your public app send commands to TVs that stay in private LANs.
 
 Deploy `backend/main.py` to your cloud backend (Render/Railway/etc), then set env:
 
-- `FRONTEND_ORIGINS=https://your-frontend.vercel.app`
+- `FRONTEND_ORIGINS=https://samsung-display-hub.vercel.app,https://www.samsung-display-hub.vercel.app,http://localhost:5173,http://127.0.0.1:5173`
 - `REMOTE_AUTH_REQUIRED=true`
-- `CLOUD_API_KEY=<strong-random-value>`
-- `AGENT_SHARED_SECRET=<strong-random-value>`
+- `CLOUD_API_KEY=your-long-random-secret-1`
+- `AGENT_SHARED_SECRET=your-long-random-secret-2`
+- `CONNECTION_TEST_TIMEOUT_SECONDS=8`
+
+Use real strong random values in production, and keep `AGENT_SHARED_SECRET` identical on cloud and all Pi agents.
 
 Start command:
 

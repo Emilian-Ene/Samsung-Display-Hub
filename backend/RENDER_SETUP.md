@@ -16,21 +16,20 @@ Use this when you want the backend cloud-hosted on Render.
 
 Set these in Render service settings:
 
-- `FRONTEND_ORIGINS=https://your-vercel-app.vercel.app`
+- `FRONTEND_ORIGINS=https://samsung-display-hub.vercel.app,https://www.samsung-display-hub.vercel.app,http://localhost:5173,http://127.0.0.1:5173`
 - `REMOTE_AUTH_REQUIRED=true`
-- `CLOUD_API_KEY=<long-random-secret>`
-- `AGENT_SHARED_SECRET=<long-random-secret>`
-
-Optional:
-
+- `CLOUD_API_KEY=your-long-random-secret-1`
+- `AGENT_SHARED_SECRET=your-long-random-secret-2`
 - `CONNECTION_TEST_TIMEOUT_SECONDS=8`
+
+Use real strong random values in production, and keep `AGENT_SHARED_SECRET` identical on cloud and all Pi agents.
 
 ## Frontend (Vercel) values
 
 Set in Vercel:
 
 - `VITE_API_URL=https://your-render-service.onrender.com`
-- `VITE_CLOUD_API_KEY=<same CLOUD_API_KEY as Render>`
+- `VITE_CLOUD_API_KEY=your-long-random-secret-1`
 
 ## Pi agent values (each location)
 

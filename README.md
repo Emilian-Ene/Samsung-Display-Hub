@@ -29,8 +29,12 @@
    uvicorn main:app --host 0.0.0.0 --port $PORT
    ```
 
-5. Add environment variable:
-   - `FRONTEND_ORIGINS=https://your-frontend-name.vercel.app`
+5. Add environment variables:
+   - `FRONTEND_ORIGINS=https://samsung-display-hub.vercel.app,https://www.samsung-display-hub.vercel.app,http://localhost:5173,http://127.0.0.1:5173`
+   - `REMOTE_AUTH_REQUIRED=true`
+   - `CLOUD_API_KEY=your-long-random-secret-1`
+   - `AGENT_SHARED_SECRET=your-long-random-secret-2`
+   - `CONNECTION_TEST_TIMEOUT_SECONDS=8`
 
 ## Frontend (Vercel)
 
@@ -46,6 +50,7 @@
 2. Set project root to `frontend`.
 3. Add environment variable:
    - `VITE_API_URL=https://your-backend.onrender.com`
+   - `VITE_CLOUD_API_KEY=your-long-random-secret-1`
    - `VITE_DEFAULT_TV_IP=192.168.1.122`
    - `VITE_DEFAULT_DISPLAY_ID=1`
    - `VITE_DEFAULT_PORT=1515`

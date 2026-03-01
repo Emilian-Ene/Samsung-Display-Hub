@@ -27,11 +27,29 @@ _remote_jobs: dict[str, dict[str, Any]] = {}
 _remote_queue_by_agent: dict[str, list[str]] = {}
 _agent_state: dict[str, dict[str, Any]] = {}
 
-frontend_origins = [
-    origin.strip()
-    for origin in os.getenv("FRONTEND_ORIGINS", "http://localhost:5173").split(",")
-    if origin.strip()
-]
+DEFAULT_FRONTEND_ORIGINS = {
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://localhost:5173",
+    "https://127.0.0.1:5173",
+    "tauri://localhost",
+    "https://tauri.localhost",
+    "http://tauri.localhost",
+    "null",
+}
+
+
+def _load_frontend_origins() -> list[str]:
+    configured_origins = {
+        origin.strip()
+        for origin in os.getenv("FRONTEND_ORIGINS", "").split(",")
+        if origin.strip()
+    }
+    merged = DEFAULT_FRONTEND_ORIGINS | configured_origins
+    return sorted(merged)
+
+
+frontend_origins = _load_frontend_origins()
 
 app.add_middleware(
     CORSMiddleware,
