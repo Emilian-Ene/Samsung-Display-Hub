@@ -2,11 +2,9 @@
 
 This file combines all project markdown documentation into one place.
 
-
 ---
 
 ## Source: README.md
-
 
 # Samsung TV Control (Render + Vercel)
 
@@ -126,11 +124,9 @@ npm install
 npm run dev
 ```
 
-
 ---
 
 ## Source: DEPLOY_REMINDER.md
-
 
 # Deploy Reminder
 
@@ -142,18 +138,18 @@ When URLs are ready, set these values:
   - `VITE_API_URL=https://<your-render-service>.onrender.com`
 
 Current repo:
+
 - `https://github.com/Emilian-Ene/Samsung-Display-Hub.git`
 
 Next step when URLs are available:
+
 1. Send both URLs.
 2. Update env vars in Render + Vercel.
 3. Trigger redeploy.
 
-
 ---
 
 ## Source: LOGIC_NOTES.md
-
 
 # SamsungBeta Logic Notes (MDC Only)
 
@@ -202,11 +198,9 @@ This project is intentionally focused on Samsung MDC control only.
 - `frontend/src/App.vue`
 - `README.md`
 
-
 ---
 
 ## Source: docs/Samsung_Control_System_Brief.md
-
 
 # Samsung Remote Control System
 
@@ -274,11 +268,9 @@ The application is designed with "Secure by Design" principles for the control l
 
 _Note: This brief covers application and method-of-operation security. Network-level security (Firewalls, VLAN segmentation, VPN access) is assumed to be managed by the infrastructure team._
 
-
 ---
 
 ## Source: docs/MULTI_SITE_AGENT_ROUTING.md
-
 
 # Multi-site routing (many Pis, many screens)
 
@@ -305,9 +297,11 @@ Avoid spaces and special characters.
 
 ## Example with 3 sites x 10 screens
 
-- Pi at Bucharest hostname: `site-bucharest` (leave `AGENT_ID` empty or set `AGENT_ID=$(hostname)`)
-- Pi at London hostname: `site-london` (leave `AGENT_ID` empty or set `AGENT_ID=$(hostname)`)
-- Pi at Berlin hostname: `site-berlin` (leave `AGENT_ID` empty or set `AGENT_ID=$(hostname)`)
+- Pi at Bucharest hostname: `site-bucharest` and manually set `AGENT_ID` on that Pi
+- Pi at London hostname: `site-london` and manually set `AGENT_ID` on that Pi
+- Pi at Berlin hostname: `site-berlin` and manually set `AGENT_ID` on that Pi
+
+Set each Pi `AGENT_ID` manually in `/etc/samsung-option-b-agent.env` after updates.
 
 For every Bucharest screen, set `agentId=site-bucharest` in the dashboard.
 For every London screen, set `agentId=site-london`.
@@ -343,11 +337,9 @@ Notes:
 - Empty `agentId` for remote-only sites.
 - Using local screen IPs from the wrong LAN/site.
 
-
 ---
 
 ## Source: backend/OPTION_B_SETUP.md
-
 
 # Option B Setup (Cloud Broker + Local Pi Agent)
 
@@ -394,14 +386,14 @@ On each Pi, set env and run agent:
 ```bash
 cd backend
 export CLOUD_BASE_URL=https://your-cloud-backend.example.com
-# Optional override. If not set, agent uses Pi hostname.
-export AGENT_ID=$(hostname)
+export AGENT_ID=
 export AGENT_SHARED_SECRET=<same-value-as-cloud>
 export LOCAL_BACKEND_URL=http://127.0.0.1:8000
 python option_b_agent.py
 ```
 
-If `AGENT_ID` is unset, the agent automatically uses the Pi hostname.
+Use a different `AGENT_ID` for each location (e.g. `site-london`, `site-cluj`).
+Set it manually on each Pi terminal before starting/restarting the agent.
 
 Recommended naming rule (important):
 
@@ -412,7 +404,7 @@ Example for one site:
 
 - Pi hostname: `site-bucharest`
 - Tailscale device name: `site-bucharest`
-- `AGENT_ID=$(hostname)` (or leave empty and auto-use hostname)
+- `AGENT_ID=` (set manually on each Pi)
 
 For reboot persistence on Pi, use systemd setup from:
 
@@ -490,11 +482,9 @@ curl "https://your-cloud-backend.example.com/api/remote/agents" \
 - For production durability, move jobs/agents to Redis or Postgres.
 - Keep `CLOUD_API_KEY` and `AGENT_SHARED_SECRET` private.
 
-
 ---
 
 ## Source: backend/RENDER_SETUP.md
-
 
 # Render Setup (Backend)
 
@@ -534,7 +524,7 @@ Set in Vercel:
 Run one agent per site with unique ID:
 
 - `CLOUD_BASE_URL=https://your-render-service.onrender.com`
-- `AGENT_ID=$(hostname)` (or leave unset to auto-use Pi hostname)
+- `AGENT_ID=` (set manually on each Pi)
 - `AGENT_SHARED_SECRET=<same as Render>`
 - `LOCAL_BACKEND_URL=http://127.0.0.1:8000`
 
@@ -585,11 +575,9 @@ curl -X POST https://your-render-service.onrender.com/api/remote/jobs \
   }'
 ```
 
-
 ---
 
 ## Source: backend/PI_TAILSCALE_VERCEL_SETUP.md
-
 
 # Pi Backend + Tailscale Funnel + Vercel Frontend (Production)
 
@@ -848,11 +836,9 @@ sudo systemctl start samsung-backend
 sudo systemctl status samsung-backend
 ```
 
-
 ---
 
 ## Source: backend/PI_SERVER_SETUP_AUTOSTART.md
-
 
 # Raspberry Pi Backend Setup (Start + Auto Start)
 
@@ -1057,7 +1043,6 @@ Paste values (edit for your deployment):
 
 ```dotenv
 CLOUD_BASE_URL=https://your-render-service.onrender.com
-# Optional override. If empty, agent uses Pi hostname.
 AGENT_ID=
 AGENT_SHARED_SECRET=replace-with-strong-random-secret
 LOCAL_BACKEND_URL=http://127.0.0.1:8000
@@ -1065,6 +1050,8 @@ AGENT_POLL_INTERVAL_SECONDS=2
 AGENT_MAX_JOBS_PER_POLL=5
 AGENT_REQUEST_TIMEOUT_SECONDS=20
 ```
+
+After each git auto-update, keep this file local and set `AGENT_ID` manually on the Pi terminal.
 
 Protect file permissions:
 
@@ -1169,11 +1156,9 @@ Stop/disable later:
 sudo systemctl disable --now samsung-auto-update.timer
 ```
 
-
 ---
 
 ## Source: backend/autoupdatebackend.md
-
 
 # Auto Update Backend From Git (Next Pi)
 

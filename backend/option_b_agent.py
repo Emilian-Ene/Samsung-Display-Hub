@@ -6,8 +6,7 @@ from typing import Any
 import requests
 
 CLOUD_BASE_URL = os.getenv("CLOUD_BASE_URL", "").strip().rstrip("/")
-HOSTNAME = socket.gethostname().strip()
-AGENT_ID = os.getenv("AGENT_ID", "").strip() or HOSTNAME
+AGENT_ID = os.getenv("AGENT_ID", "").strip()
 AGENT_SHARED_SECRET = os.getenv("AGENT_SHARED_SECRET", "").strip()
 LOCAL_BACKEND_URL = os.getenv("LOCAL_BACKEND_URL", "http://127.0.0.1:8000").strip().rstrip("/")
 AGENT_POLL_INTERVAL_SECONDS = float(os.getenv("AGENT_POLL_INTERVAL_SECONDS", "2"))
@@ -172,7 +171,7 @@ def _validate_config() -> None:
     if not CLOUD_BASE_URL:
         missing.append("CLOUD_BASE_URL")
     if not AGENT_ID:
-        missing.append("AGENT_ID or system hostname")
+        missing.append("AGENT_ID")
 
     if missing:
         raise AgentConfigError("Missing required env vars: " + ", ".join(missing))
@@ -180,11 +179,7 @@ def _validate_config() -> None:
 
 def main() -> None:
     _validate_config()
-    agent_id_source = "env" if os.getenv("AGENT_ID", "").strip() else "hostname"
-    print(
-        f"[agent] starting: agent_id={AGENT_ID} (source={agent_id_source}) "
-        f"cloud={CLOUD_BASE_URL} local={LOCAL_BACKEND_URL}"
-    )
+    print(f"[agent] starting: agent_id={AGENT_ID} cloud={CLOUD_BASE_URL} local={LOCAL_BACKEND_URL}")
 
     last_heartbeat = 0.0
     while True:
