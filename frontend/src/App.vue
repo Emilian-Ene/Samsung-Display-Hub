@@ -26,7 +26,9 @@ const STORAGE_KEY = 'samsung-admin-devices-v1';
 const LOGS_STORAGE_KEY = 'samsung-admin-logs-v1';
 const BULK_REFRESH_CONCURRENCY = 8;
 const AGENT_STATUS_REFRESH_INTERVAL_MS = 15000;
+const TIMESTAMP_AUTO_REFRESH_INTERVAL_MS = 30000;
 const AGENT_ONLINE_THRESHOLD_MS = 45000;
+const DEVICE_HEARTBEAT_THRESHOLD_MS = 45000;
 const IMPORTANT_TOAST_SEVERITIES = new Set(['warn', 'error']);
 const BRAND_LOGO_URL = '/logo.jpg';
 const confirm = useConfirm();
@@ -34,6 +36,7 @@ const toast = useToast();
 
 const currentView = ref('dashboard');
 const selectedDeviceId = ref(null);
+const selectedAgentId = ref('');
 
 const devices = ref([]);
 const appStatus = ref('Ready');
@@ -41,7 +44,10 @@ const commandLogs = ref([]);
 const showBrandLogo = ref(true);
 const agentStatusById = ref({});
 const agentsLastUpdatedAt = ref('-');
+const timestampLastUpdatedAt = ref('-');
 let agentStatusRefreshInterval = null;
+let timestampAutoRefreshInterval = null;
+let isTimestampRefreshRunning = false;
 
 const mdcCommands = ref([]);
 const selectedMdcCommand = ref('status');
@@ -71,6 +77,7 @@ const isDeviceTestBusy = ref(false);
 const isPowerBusy = ref(false);
 const isMdcBusy = ref(false);
 const isAgentRefreshBusy = ref(false);
+const isTimestampRefreshBusy = ref(false);
 const volumeLevel = ref(50);
 const brightnessLevel = ref(50);
 const isCommandInfoOpen = ref(false);
@@ -84,7 +91,6 @@ const statusFilterOptions = [
   { label: 'All statuses', value: 'all' },
   { label: 'Online', value: 'online' },
   { label: 'Offline', value: 'offline' },
-  { label: 'Unknown', value: 'unknown' },
 ];
 const mdcOperationOptions = ['auto', 'get', 'set'];
 
@@ -95,6 +101,10 @@ const selectedDevice = computed(() => {
 });
 
 const currentViewTitle = computed(() => {
+  if (currentView.value === 'timestamp') {
+    return 'Timestamp Monitor';
+  }
+
   if (currentView.value === 'agents') {
     return 'Explore Agents';
   }
@@ -103,7 +113,14 @@ const currentViewTitle = computed(() => {
     return 'Device Control';
   }
 
-  return 'Dashboard';
+  return 'Samsung Control';
+});
+
+const currentViewSubtitle = computed(() => {
+  if (currentView.value === 'dashboard') {
+    return 'Smart signage dashboard';
+  }
+  return '';
 });
 
 const selectedCommandMeta = computed(() => {
@@ -637,6 +654,71 @@ const trackedAgentRows = computed(() => {
   });
 });
 
+const timestampMonitorRows = computed(() => {
+  return devices.value
+    .map((device) => {
+      const current = resolveDeviceStatus(device);
+      const lastChecked = String(device?.lastChecked || '-');
+      const agentId = String(device?.agentId || '').trim() || '-';
+      const lastOnlineAt = String(device?.lastOnlineAt || '-');
+      const offlineSinceAt = String(device?.offlineSinceAt || '-');
+      const lastOnlineTs = parseIsoTimestamp(
+        lastOnlineAt === '-' ? '' : lastOnlineAt,
+      );
+      const heartbeatOfflineSince =
+        current === 'offline' && offlineSinceAt === '-' && lastOnlineTs !== null
+          ? new Date(
+              lastOnlineTs + DEVICE_HEARTBEAT_THRESHOLD_MS,
+            ).toLocaleString()
+          : '-';
+      return {
+        id: String(device?.id || ''),
+        name: String(device?.name || '-'),
+        ip: String(device?.ip || '-'),
+        agentId,
+        current,
+        lastOnline: lastOnlineAt,
+        offlineSince:
+          current === 'offline'
+            ? offlineSinceAt !== '-'
+              ? offlineSinceAt
+              : heartbeatOfflineSince
+            : '-',
+        lastChecked,
+      };
+    })
+    .sort((left, right) => left.name.localeCompare(right.name));
+});
+
+const selectedTrackedAgentRow = computed(() => {
+  return (
+    trackedAgentRows.value.find(
+      (agent) => agent.agentId === selectedAgentId.value,
+    ) || null
+  );
+});
+
+const selectedTrackedAgentDevices = computed(() => {
+  const agentId = String(selectedAgentId.value || '').trim();
+  if (!agentId) {
+    return [];
+  }
+
+  return devices.value
+    .filter((device) => getDeviceAgentId(device) === agentId)
+    .slice()
+    .sort((left, right) => left.name.localeCompare(right.name));
+});
+
+const toggleAgentDevices = (agentId) => {
+  const nextId = String(agentId || '').trim();
+  if (!nextId) {
+    return;
+  }
+
+  selectedAgentId.value = selectedAgentId.value === nextId ? '' : nextId;
+};
+
 const detectedAgentOptions = computed(() => {
   return Object.keys(agentStatusById.value)
     .sort((left, right) => left.localeCompare(right))
@@ -650,7 +732,34 @@ const detectedAgentOptions = computed(() => {
 });
 
 const parseIsoTimestamp = (isoValue) => {
-  const value = Date.parse(String(isoValue || ''));
+  const text = String(isoValue || '').trim();
+  if (!text || text === '-') {
+    return null;
+  }
+
+  const dayFirstMatch = text.match(
+    /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:,\s*|\s+)(\d{1,2}):(\d{2})(?::(\d{2}))?$/,
+  );
+
+  if (dayFirstMatch) {
+    const day = Number(dayFirstMatch[1]);
+    const monthIndex = Number(dayFirstMatch[2]) - 1;
+    const year = Number(dayFirstMatch[3]);
+    const hours = Number(dayFirstMatch[4]);
+    const minutes = Number(dayFirstMatch[5]);
+    const seconds = Number(dayFirstMatch[6] || 0);
+    const ts = new Date(
+      year,
+      monthIndex,
+      day,
+      hours,
+      minutes,
+      seconds,
+    ).getTime();
+    return Number.isFinite(ts) ? ts : null;
+  }
+
+  const value = Date.parse(text);
   return Number.isFinite(value) ? value : null;
 };
 
@@ -679,6 +788,54 @@ const agentStatusLabelForDevice = (device) => {
   return agentStatusById.value[agentId]?.status || 'unknown';
 };
 
+const resolveDeviceStatus = (device) => {
+  const rawStatus = String(device?.status || '').toLowerCase();
+  const agentId = getDeviceAgentId(device);
+
+  if (agentId) {
+    const agentStatus = agentStatusById.value[agentId]?.status || 'unknown';
+    if (agentStatus !== 'online') {
+      return 'offline';
+    }
+  }
+
+  if (rawStatus !== 'online') {
+    return 'offline';
+  }
+
+  const lastOnlineText = String(device?.lastOnlineAt || '').trim();
+  const lastOnlineTs = parseIsoTimestamp(lastOnlineText);
+  if (lastOnlineTs === null) {
+    return 'offline';
+  }
+
+  const ageMs = Date.now() - lastOnlineTs;
+  return ageMs <= DEVICE_HEARTBEAT_THRESHOLD_MS ? 'online' : 'offline';
+};
+
+const applyDeviceStatusTransition = (device, nextStatus, checkedAt) => {
+  const timestamp = String(checkedAt || new Date().toLocaleString());
+  const previousStatus = String(device?.status || 'unknown');
+
+  device.status = nextStatus;
+  device.lastChecked = timestamp;
+
+  if (nextStatus === 'online') {
+    device.lastOnlineAt = timestamp;
+    device.offlineSinceAt = '-';
+    return;
+  }
+
+  if (nextStatus === 'offline') {
+    if (previousStatus !== 'offline') {
+      device.offlineSinceAt = timestamp;
+    }
+    if (!String(device?.lastOnlineAt || '').trim()) {
+      device.lastOnlineAt = '-';
+    }
+  }
+};
+
 const applyAgentAvailabilityToDevices = () => {
   let changed = false;
 
@@ -695,9 +852,8 @@ const applyAgentAvailabilityToDevices = () => {
 
     const nextFeedback = `Agent ${agentId} is ${agentStatus}. TV status unavailable.`;
     if (device.status !== 'offline' || device.lastFeedback !== nextFeedback) {
-      device.status = 'offline';
+      applyDeviceStatusTransition(device, 'offline');
       device.lastFeedback = nextFeedback;
-      device.lastChecked = new Date().toLocaleString();
       changed = true;
     }
   }
@@ -722,20 +878,15 @@ const statusSeverity = (status) => {
   if (status === 'online') {
     return 'success';
   }
-  if (status === 'offline') {
-    return 'danger';
-  }
-  if (status === 'checking') {
-    return 'warn';
-  }
-  return 'secondary';
+  return 'danger';
 };
 
 const filteredDevices = computed(() => {
   const query = deviceSearch.value.trim().toLowerCase();
   return devices.value.filter((device) => {
+    const effectiveStatus = resolveDeviceStatus(device);
     const statusMatches =
-      statusFilter.value === 'all' || device.status === statusFilter.value;
+      statusFilter.value === 'all' || effectiveStatus === statusFilter.value;
     const siteMatches =
       siteFilter.value === 'all' ||
       String(device.site || '').trim() === siteFilter.value;
@@ -775,12 +926,10 @@ const sortedFilteredDevices = computed(() => {
     if (sortBy.value === 'status') {
       const statusOrder = {
         online: 0,
-        checking: 1,
-        unknown: 2,
-        offline: 3,
+        offline: 1,
       };
-      const leftValue = statusOrder[left.status] ?? 99;
-      const rightValue = statusOrder[right.status] ?? 99;
+      const leftValue = statusOrder[resolveDeviceStatus(left)] ?? 99;
+      const rightValue = statusOrder[resolveDeviceStatus(right)] ?? 99;
       return (leftValue - rightValue) * directionFactor;
     }
 
@@ -943,6 +1092,37 @@ const formatConnectionToastDetail = (detail) => {
   }
   return detail;
 };
+
+const feedbackParts = (message) => {
+  const text = String(message || '').trim();
+  const lower = text.toLowerCase();
+
+  if (lower.startsWith('online:')) {
+    return {
+      prefix: 'Online:',
+      detail: text.slice(7).trim(),
+      prefixClass: 'feedback-status-online',
+    };
+  }
+
+  if (lower.startsWith('offline:')) {
+    return {
+      prefix: 'Offline:',
+      detail: text.slice(8).trim(),
+      prefixClass: 'feedback-status-offline',
+    };
+  }
+
+  return {
+    prefix: '',
+    detail: text,
+    prefixClass: '',
+  };
+};
+
+const selectedDeviceFeedbackParts = computed(() =>
+  feedbackParts(selectedDevice.value?.lastFeedback),
+);
 
 const parseMdcResultSummary = (resultValue) => {
   const text = String(resultValue ?? '').trim();
@@ -1462,6 +1642,18 @@ const protocolLabel = (protocol) =>
 const normalizeDevice = (device) => {
   const target = normalizeTarget(device?.ip, device?.port);
   const protocol = normalizeProtocol(device?.protocol);
+  const status =
+    String(device?.status || '').toLowerCase() === 'online'
+      ? 'online'
+      : 'offline';
+  const lastChecked = String(device?.lastChecked || '-');
+  const fallbackChecked = lastChecked === '-' ? '' : lastChecked;
+  const lastOnlineAt =
+    String(device?.lastOnlineAt || device?.lastOnline || '').trim() ||
+    (status === 'online' ? fallbackChecked : '');
+  const offlineSinceAt =
+    String(device?.offlineSinceAt || device?.offlineSince || '').trim() ||
+    (status === 'offline' ? fallbackChecked : '');
   const port =
     protocol === PROTOCOL_SIGNAGE_MDC &&
     (target.port === 8001 || target.port === 8002)
@@ -1481,9 +1673,11 @@ const normalizeDevice = (device) => {
     zone: String(device?.zone || ''),
     area: String(device?.area || ''),
     description: String(device?.description || ''),
-    status: String(device?.status || 'unknown'),
+    status,
     lastFeedback: String(device?.lastFeedback || 'No checks yet'),
-    lastChecked: String(device?.lastChecked || '-'),
+    lastChecked,
+    lastOnlineAt: lastOnlineAt || '-',
+    offlineSinceAt: offlineSinceAt || '-',
   };
 };
 
@@ -1647,7 +1841,7 @@ const importDevicesCsv = async (event) => {
           zone: row.zone || '',
           area: row.area || '',
           description: row.description || '',
-          status: 'unknown',
+          status: 'offline',
           lastFeedback: 'Imported from CSV',
           lastChecked: '-',
         }),
@@ -1759,12 +1953,10 @@ const checkDevice = async (device, options = {}) => {
   device.port = target.port;
 
   try {
-    device.status = 'checking';
     device.lastFeedback = `Testing ${testTargetText(device)}...`;
     if (!isBulk) {
       appStatus.value = `Testing ${device.name} on ${testTargetText(device)}...`;
       pushLog(`Testing ${device.name} on ${testTargetText(device)}`);
-      saveDevices();
     }
 
     const agentId = getDeviceAgentId(device);
@@ -1797,9 +1989,10 @@ const checkDevice = async (device, options = {}) => {
       }
     }
 
-    device.status = 'online';
-    device.lastFeedback = `Reachable via ${protocolLabel(data.protocol)} on port ${data.port}`;
-    device.lastChecked = new Date().toLocaleString();
+    const checkedAt = new Date().toLocaleString();
+    applyDeviceStatusTransition(device, 'online', checkedAt);
+    const onlinePort = Number(data?.port) || Number(device.port) || 1515;
+    device.lastFeedback = `Online: ${device.ip}:${onlinePort}`;
     if (!isBulk) {
       appStatus.value = `${device.name}: online (${protocolLabel(data.protocol)})`;
       pushLog(`Test success ${device.name}: ${device.lastFeedback}`);
@@ -1810,9 +2003,9 @@ const checkDevice = async (device, options = {}) => {
       );
     }
   } catch (error) {
-    device.status = 'offline';
-    device.lastFeedback = error.message;
-    device.lastChecked = new Date().toLocaleString();
+    const checkedAt = new Date().toLocaleString();
+    applyDeviceStatusTransition(device, 'offline', checkedAt);
+    device.lastFeedback = `Offline: ${device.ip}:${device.port}`;
     if (!isBulk) {
       appStatus.value = `${device.name}: offline`;
       pushLog(`Test failed ${device.name}: ${error.message}`);
@@ -1826,33 +2019,44 @@ const checkDevice = async (device, options = {}) => {
   }
 };
 
-const refreshAllDevices = async () => {
+const refreshAllDevices = async ({
+  silent = false,
+  showStartToast = false,
+} = {}) => {
   if (!API_BASE) {
-    appStatus.value = 'VITE_API_URL is not set';
-    showToast(
-      'error',
-      'API URL Missing',
-      'Set VITE_API_URL and reload the app',
-    );
+    if (!silent) {
+      appStatus.value = 'VITE_API_URL is not set';
+      showToast(
+        'error',
+        'API URL Missing',
+        'Set VITE_API_URL and reload the app',
+      );
+    }
     return;
   }
 
   if (!devices.value.length) {
-    appStatus.value = 'No devices to refresh';
-    showToast(
-      'warn',
-      'Refresh Skipped',
-      'Add or import at least one device first',
-    );
+    if (!silent) {
+      appStatus.value = 'No devices to refresh';
+      showToast(
+        'warn',
+        'Refresh Skipped',
+        'Add or import at least one device first',
+      );
+    }
     return;
   }
 
-  appStatus.value = `Refreshing ${devices.value.length} device statuses...`;
-  for (const device of devices.value) {
-    device.status = 'checking';
-    device.lastFeedback = 'Queued for refresh...';
+  if (!silent) {
+    appStatus.value = `Refreshing ${devices.value.length} device statuses...`;
+    if (showStartToast) {
+      showToast(
+        'info',
+        'Refresh Started',
+        `Checking ${devices.value.length} device statuses...`,
+      );
+    }
   }
-  saveDevices();
 
   await runInBatches(
     devices.value,
@@ -1869,15 +2073,41 @@ const refreshAllDevices = async () => {
   const offlineCount = devices.value.filter(
     (device) => device.status === 'offline',
   ).length;
-  appStatus.value = `Dashboard updated: ${onlineCount} online, ${offlineCount} offline`;
-  pushLog(
-    `Refresh all completed: ${onlineCount} online, ${offlineCount} offline`,
-  );
-  showToast(
-    'info',
-    'Refresh Completed',
-    `${onlineCount} online, ${offlineCount} offline`,
-  );
+  if (!silent) {
+    appStatus.value = `Dashboard updated: ${onlineCount} online, ${offlineCount} offline`;
+    pushLog(
+      `Refresh all completed: ${onlineCount} online, ${offlineCount} offline`,
+    );
+    showToast(
+      'info',
+      'Refresh Completed',
+      `${onlineCount} online, ${offlineCount} offline`,
+    );
+  }
+};
+
+const refreshTimestampMonitor = async ({ silent = false } = {}) => {
+  if (isTimestampRefreshRunning) {
+    return;
+  }
+
+  isTimestampRefreshRunning = true;
+  if (!silent) {
+    isTimestampRefreshBusy.value = true;
+  }
+  try {
+    await fetchRemoteAgents({ silent: true });
+    await refreshAllDevices({ silent });
+    timestampLastUpdatedAt.value = new Date().toLocaleString();
+    if (!silent) {
+      appStatus.value = 'Timestamp Monitor refreshed';
+    }
+  } finally {
+    isTimestampRefreshRunning = false;
+    if (!silent) {
+      isTimestampRefreshBusy.value = false;
+    }
+  }
 };
 
 const addDevice = () => {
@@ -1916,9 +2146,11 @@ const addDevice = () => {
     zone: addZone.value.trim(),
     area: addArea.value.trim(),
     description: addDescription.value.trim(),
-    status: 'unknown',
+    status: 'offline',
     lastFeedback: 'No checks yet',
     lastChecked: '-',
+    lastOnlineAt: '-',
+    offlineSinceAt: '-',
   };
 
   devices.value.push(item);
@@ -2087,6 +2319,21 @@ const openDevice = (device) => {
   currentView.value = 'device';
   appStatus.value = `Opened ${device.name}`;
   showToast('info', 'Device Opened', device.name, 1800);
+};
+
+const openDeviceFromAgentRow = (event) => {
+  const device = event?.data || null;
+  if (!device) {
+    return;
+  }
+  openDevice(device);
+};
+
+const openDeviceFromTimestampRow = (row) => {
+  if (!row) {
+    return;
+  }
+  openDevice(row);
 };
 
 const openDeviceControl = () => {
@@ -2505,16 +2752,26 @@ onMounted(async () => {
   await fetchMdcCommands();
   await fetchRemoteAgents({ silent: true });
   await refreshAllDevices();
+  timestampLastUpdatedAt.value = new Date().toLocaleString();
 
   agentStatusRefreshInterval = window.setInterval(() => {
     fetchRemoteAgents({ silent: true });
   }, AGENT_STATUS_REFRESH_INTERVAL_MS);
+
+  timestampAutoRefreshInterval = window.setInterval(() => {
+    refreshTimestampMonitor({ silent: true });
+  }, TIMESTAMP_AUTO_REFRESH_INTERVAL_MS);
 });
 
 onUnmounted(() => {
   if (agentStatusRefreshInterval) {
     window.clearInterval(agentStatusRefreshInterval);
     agentStatusRefreshInterval = null;
+  }
+
+  if (timestampAutoRefreshInterval) {
+    window.clearInterval(timestampAutoRefreshInterval);
+    timestampAutoRefreshInterval = null;
   }
 });
 </script>
@@ -2528,12 +2785,15 @@ onUnmounted(() => {
         <img
           v-if="showBrandLogo"
           :src="BRAND_LOGO_URL"
-          alt="Samsung Display Hub logo"
+          alt="Samsung MCD logo"
           class="brand-logo-image"
           @error="showBrandLogo = false"
         />
         <i v-else class="pi pi-desktop"></i>
-        <span>Samsung Display Hub</span>
+        <div class="brand-logo-text">
+          <span class="brand-title">Samsung MCD</span>
+          <span class="brand-subtitle">Control Center</span>
+        </div>
       </div>
       <Button
         label="Devices"
@@ -2559,12 +2819,25 @@ onUnmounted(() => {
         text
         @click="currentView = 'agents'"
       />
+      <Button
+        label="Timestamp Monitor"
+        icon="pi pi-clock"
+        class="nav-button"
+        :class="{ active: currentView === 'timestamp' }"
+        text
+        @click="currentView = 'timestamp'"
+      />
     </aside>
 
     <section class="content">
       <Toolbar v-if="currentView === 'dashboard'" class="top-menu">
         <template #start>
-          <div class="top-menu-title">{{ currentViewTitle }}</div>
+          <div class="top-menu-title-wrap">
+            <div class="top-menu-title">{{ currentViewTitle }}</div>
+            <div v-if="currentViewSubtitle" class="top-menu-subtitle">
+              {{ currentViewSubtitle }}
+            </div>
+          </div>
         </template>
         <template #end>
           <div class="top-menu-actions">
@@ -2663,20 +2936,28 @@ onUnmounted(() => {
                   option-value="value"
                 />
               </div>
-              <Button
-                label="Auto Detect Agent"
-                icon="pi pi-compass"
-                severity="secondary"
-                class="detect-connection-btn"
-                @click="autoDetectAddAgentId"
-              />
-              <Button
-                label="Detect Connection"
-                icon="pi pi-search"
-                severity="secondary"
-                class="detect-connection-btn"
-                @click="autoProbeAddDraft"
-              />
+              <div class="form-grid-actions">
+                <Button
+                  label="Detect Connection"
+                  icon="pi pi-search"
+                  severity="secondary"
+                  class="detect-connection-btn"
+                  @click="autoProbeAddDraft"
+                />
+                <Button
+                  label="Auto Detect Agent"
+                  icon="pi pi-compass"
+                  severity="secondary"
+                  class="detect-connection-btn"
+                  @click="autoDetectAddAgentId"
+                />
+                <Button
+                  label="Refresh All Status"
+                  icon="pi pi-refresh"
+                  class="detect-connection-btn"
+                  @click="refreshAllDevices({ showStartToast: true })"
+                />
+              </div>
             </div>
 
             <div class="toolbar">
@@ -2712,34 +2993,16 @@ onUnmounted(() => {
                 outlined
                 @click="clearFilters"
               />
-              <Button
-                label="Refresh All Status"
-                icon="pi pi-refresh"
-                @click="refreshAllDevices"
-              />
-              <Button
-                :label="`Delete Selected (${selectedDeviceCount})`"
-                icon="pi pi-trash"
-                severity="danger"
-                outlined
-                :disabled="selectedDeviceCount === 0"
-                @click="requestDeleteSelectedDevices"
-              />
-            </div>
-
-            <div class="legend">
-              <span class="legend-item"
-                ><Tag value="Online" severity="success"
-              /></span>
-              <span class="legend-item"
-                ><Tag value="Offline" severity="danger"
-              /></span>
-              <span class="legend-item"
-                ><Tag value="Checking" severity="warn"
-              /></span>
-              <span class="legend-item"
-                ><Tag value="Unknown" severity="secondary"
-              /></span>
+              <div class="toolbar-delete-row">
+                <Button
+                  :label="`Delete Selected (${selectedDeviceCount})`"
+                  icon="pi pi-trash"
+                  severity="danger"
+                  outlined
+                  :disabled="selectedDeviceCount === 0"
+                  @click="requestDeleteSelectedDevices"
+                />
+              </div>
             </div>
 
             <DataTable
@@ -2784,6 +3047,12 @@ onUnmounted(() => {
               </Column>
 
               <Column header="Agent ID">
+                <template #body="{ data }">{{
+                  getDeviceAgentId(data) || '-'
+                }}</template>
+              </Column>
+
+              <Column header="Agent Status">
                 <template #body="{ data }">
                   <Tag
                     :value="agentStatusLabelForDevice(data)"
@@ -2803,8 +3072,8 @@ onUnmounted(() => {
                 </template>
                 <template #body="{ data }">
                   <Tag
-                    :value="data.status"
-                    :severity="statusSeverity(data.status)"
+                    :value="resolveDeviceStatus(data)"
+                    :severity="statusSeverity(resolveDeviceStatus(data))"
                   />
                 </template>
               </Column>
@@ -2877,17 +3146,139 @@ onUnmounted(() => {
                   :key="agent.agentId"
                   class="agent-status-item"
                 >
-                  <span class="agent-status-id">{{ agent.agentId }}</span>
+                  <Button
+                    text
+                    class="agent-status-id-button"
+                    :class="{
+                      active: selectedAgentId === agent.agentId,
+                    }"
+                    :label="agent.agentId"
+                    @click="toggleAgentDevices(agent.agentId)"
+                  />
                   <Tag :value="agent.status" :severity="agent.severity" />
                   <span class="agent-status-time">{{
                     agent.lastSeenLabel
                   }}</span>
                 </div>
               </div>
-              <p v-else class="feedback">No Agent ID assigned yet.</p>
+
+              <div v-if="selectedAgentId" class="agent-devices-panel">
+                <h4>
+                  Devices assigned to {{ selectedAgentId }}
+                  <Tag
+                    v-if="selectedTrackedAgentRow"
+                    :value="selectedTrackedAgentRow.status"
+                    :severity="selectedTrackedAgentRow.severity"
+                  />
+                </h4>
+
+                <DataTable
+                  :value="selectedTrackedAgentDevices"
+                  data-key="id"
+                  class="agent-devices-table"
+                  striped-rows
+                  size="small"
+                  @row-click="openDeviceFromAgentRow"
+                >
+                  <template #empty>
+                    No devices assigned to this agent.
+                  </template>
+                  <Column header="Name">
+                    <template #body="{ data }">{{ data.name }}</template>
+                  </Column>
+                  <Column header="IP">
+                    <template #body="{ data }">
+                      {{ data.ip }}:{{ data.port }} (ID {{ data.displayId }})
+                    </template>
+                  </Column>
+                  <Column header="Protocol">
+                    <template #body="{ data }">{{
+                      protocolLabel(data.protocol)
+                    }}</template>
+                  </Column>
+                  <Column header="Status">
+                    <template #body="{ data }">
+                      <Tag
+                        :value="resolveDeviceStatus(data)"
+                        :severity="statusSeverity(resolveDeviceStatus(data))"
+                      />
+                    </template>
+                  </Column>
+                  <Column header="Last Check">
+                    <template #body="{ data }">{{ data.lastChecked }}</template>
+                  </Column>
+                </DataTable>
+              </div>
+
+              <p v-if="!trackedAgentRows.length" class="feedback">
+                No Agent ID assigned yet.
+              </p>
+              <p v-else-if="!selectedAgentId" class="feedback">
+                Click an agent name to view assigned devices.
+              </p>
             </div>
           </template>
         </Card>
+      </section>
+
+      <section
+        v-else-if="currentView === 'timestamp'"
+        class="panel timestamp-monitor-panel"
+      >
+        <div class="timestamp-monitor-header">
+          <h2>Timestamp Monitor</h2>
+          <Button
+            label="Refresh Now"
+            icon="pi pi-refresh"
+            :loading="isTimestampRefreshBusy"
+            :disabled="isTimestampRefreshBusy"
+            @click="refreshTimestampMonitor"
+          />
+        </div>
+
+        <div class="timestamp-monitor-update">
+          Last update: <strong>{{ timestampLastUpdatedAt }}</strong>
+        </div>
+
+        <div class="timestamp-monitor-table-wrap">
+          <table class="timestamp-monitor-table">
+            <thead>
+              <tr>
+                <th>Name ↑</th>
+                <th>IP</th>
+                <th>Agent ↕</th>
+                <th>Current</th>
+                <th>Last Online</th>
+                <th>Offline Since</th>
+                <th>Last Check</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="row in timestampMonitorRows"
+                :key="row.id"
+                class="timestamp-monitor-row"
+                @click="openDeviceFromTimestampRow(row)"
+              >
+                <td>{{ row.name }}</td>
+                <td>{{ row.ip }}</td>
+                <td>{{ row.agentId }}</td>
+                <td>
+                  <Tag
+                    :value="row.current"
+                    :severity="statusSeverity(row.current)"
+                  />
+                </td>
+                <td>{{ row.lastOnline }}</td>
+                <td>{{ row.offlineSince }}</td>
+                <td>{{ row.lastChecked }}</td>
+              </tr>
+              <tr v-if="!timestampMonitorRows.length">
+                <td colspan="7">No devices available.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section v-else-if="currentView === 'device'" class="panel detail-grid">
@@ -2954,9 +3345,9 @@ onUnmounted(() => {
                     option-value="value"
                   />
                 </div>
-                <Button label="Save Changes" @click="saveSelectedDevice" />
               </div>
               <div class="toolbar">
+                <Button label="Save Changes" @click="saveSelectedDevice" />
                 <Button
                   label="Test Connection"
                   icon="pi pi-wifi"
@@ -2964,30 +3355,22 @@ onUnmounted(() => {
                   :disabled="isPowerBusy || isMdcBusy"
                   @click="runSelectedDeviceTest"
                 />
-                <Button
-                  label="Power ON"
-                  severity="success"
-                  outlined
-                  :loading="isPowerBusy"
-                  :disabled="isDeviceTestBusy || isMdcBusy"
-                  @click="requestPowerAction('on')"
-                />
-                <Button
-                  label="Power OFF"
-                  severity="danger"
-                  outlined
-                  :loading="isPowerBusy"
-                  :disabled="isDeviceTestBusy || isMdcBusy"
-                  @click="requestPowerAction('off')"
-                />
-                <Button
-                  label="Back to Dashboard"
-                  severity="secondary"
-                  text
-                  @click="currentView = 'dashboard'"
-                />
               </div>
-              <p class="feedback">{{ selectedDevice.lastFeedback }}</p>
+              <p class="feedback">
+                <span
+                  v-if="selectedDeviceFeedbackParts.prefix"
+                  :class="selectedDeviceFeedbackParts.prefixClass"
+                >
+                  {{ selectedDeviceFeedbackParts.prefix }}
+                </span>
+                <span v-if="selectedDeviceFeedbackParts.detail">
+                  {{
+                    selectedDeviceFeedbackParts.prefix
+                      ? ` ${selectedDeviceFeedbackParts.detail}`
+                      : selectedDeviceFeedbackParts.detail
+                  }}
+                </span>
+              </p>
             </template>
           </Card>
 
@@ -3051,6 +3434,7 @@ onUnmounted(() => {
                   label="Mute ON"
                   severity="secondary"
                   outlined
+                  class="mute-on-btn"
                   :loading="isMdcBusy"
                   :disabled="isDeviceTestBusy || isPowerBusy"
                   @click="runMuteQuickAction(true)"
@@ -3059,9 +3443,26 @@ onUnmounted(() => {
                   label="Mute OFF"
                   severity="secondary"
                   outlined
+                  class="mute-off-btn"
                   :loading="isMdcBusy"
                   :disabled="isDeviceTestBusy || isPowerBusy"
                   @click="runMuteQuickAction(false)"
+                />
+                <Button
+                  label="Power ON"
+                  severity="success"
+                  outlined
+                  :loading="isPowerBusy"
+                  :disabled="isDeviceTestBusy || isMdcBusy"
+                  @click="requestPowerAction('on')"
+                />
+                <Button
+                  label="Power OFF"
+                  severity="danger"
+                  outlined
+                  :loading="isPowerBusy"
+                  :disabled="isDeviceTestBusy || isMdcBusy"
+                  @click="requestPowerAction('off')"
                 />
               </div>
 
