@@ -679,6 +679,34 @@ const agentStatusLabelForDevice = (device) => {
   return agentStatusById.value[agentId]?.status || 'unknown';
 };
 
+const applyAgentAvailabilityToDevices = () => {
+  let changed = false;
+
+  for (const device of devices.value) {
+    const agentId = getDeviceAgentId(device);
+    if (!agentId) {
+      continue;
+    }
+
+    const agentStatus = agentStatusById.value[agentId]?.status || 'unknown';
+    if (agentStatus === 'online') {
+      continue;
+    }
+
+    const nextFeedback = `Agent ${agentId} is ${agentStatus}. TV status unavailable.`;
+    if (device.status !== 'offline' || device.lastFeedback !== nextFeedback) {
+      device.status = 'offline';
+      device.lastFeedback = nextFeedback;
+      device.lastChecked = new Date().toLocaleString();
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    saveDevices();
+  }
+};
+
 const agentStatusSeverityForDevice = (device) => {
   const label = agentStatusLabelForDevice(device);
   if (label === 'online') {
@@ -1260,6 +1288,7 @@ const fetchRemoteAgents = async ({ silent = false } = {}) => {
     }
 
     agentStatusById.value = nextState;
+    applyAgentAvailabilityToDevices();
     agentsLastUpdatedAt.value = new Date().toLocaleString();
 
     return true;
@@ -1742,6 +1771,13 @@ const checkDevice = async (device, options = {}) => {
 
     let data;
     if (agentId) {
+      const agentStatus = agentStatusById.value[agentId]?.status || 'unknown';
+      if (agentStatus !== 'online') {
+        throw new Error(
+          `Agent ${agentId} is ${agentStatus}. TV check requires online agent.`,
+        );
+      }
+
       data = await executeRemoteJob(device, 'test', {
         ...toPayload(device),
       });
