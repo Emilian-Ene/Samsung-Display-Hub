@@ -39,3 +39,11 @@ Frontend default URL:
 
 - Main guide: `docs/PROJECT_GUIDE.md`
 - CSV template: `docs/devices-multi-site-template.csv`
+
+## Recent UI Updates
+
+- Sidebar branding uses Samsung MCD with Control Center subtitle and a green status dot.
+- Timestamp Monitor is renamed to Host Monitor in navigation, titles, and status messaging.
+- Add Device actions align on one row: Detect Connection, Auto Detect Agent, Refresh All Status.
+- Device Control actions include Save Changes and Test Connection in the main toolbar.
+- MDC quick actions now include Get Status, Mute ON/OFF, and Power ON/OFF in one row.

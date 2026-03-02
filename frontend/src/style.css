@@ -39,7 +39,7 @@ body {
 .brand-logo {
   width: 100%;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
   gap: 6px;
@@ -47,28 +47,24 @@ body {
   color: #d7ffff;
 }
 
-.brand-logo-image {
-  width: 92px;
-  max-width: 100%;
-  height: auto;
-  display: block;
+.brand-logo-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
-.brand-logo .pi {
-  font-size: 1.6rem;
-  width: 2.7rem;
-  height: 2.7rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.brand-dot {
+  width: 12px;
+  height: 12px;
   border-radius: 999px;
-  background: #11585e;
+  background: #22c55e;
+  flex: 0 0 12px;
 }
 
 .brand-logo-text {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 2px;
 }
 
@@ -101,21 +97,32 @@ body {
   display: flex;
   justify-content: flex-start;
   align-items: center;
+  color: #c8f6f8;
 }
 
 .sidebar .p-button.nav-button .p-button-label {
   flex: 1;
+  display: flex;
+  align-items: center;
   text-align: left;
+  line-height: 1.2;
+  color: inherit;
 }
 
 .sidebar .p-button.nav-button .p-button-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
   margin-right: 0.5rem;
   margin-left: 0;
+  color: inherit;
 }
 
 .nav-button.active,
 .nav-button:hover {
   background: #11585e;
+  color: #d7ffff;
 }
 
 .sidebar-status {

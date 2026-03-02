@@ -102,7 +102,7 @@ const selectedDevice = computed(() => {
 
 const currentViewTitle = computed(() => {
   if (currentView.value === 'timestamp') {
-    return 'Timestamp Monitor';
+    return 'Host Monitor';
   }
 
   if (currentView.value === 'agents') {
@@ -2100,7 +2100,7 @@ const refreshTimestampMonitor = async ({ silent = false } = {}) => {
     await refreshAllDevices({ silent });
     timestampLastUpdatedAt.value = new Date().toLocaleString();
     if (!silent) {
-      appStatus.value = 'Timestamp Monitor refreshed';
+      appStatus.value = 'Host Monitor refreshed';
     }
   } finally {
     isTimestampRefreshRunning = false;
@@ -2782,17 +2782,12 @@ onUnmounted(() => {
     <ConfirmDialog />
     <aside class="sidebar">
       <div class="brand-logo" aria-label="Logo">
-        <img
-          v-if="showBrandLogo"
-          :src="BRAND_LOGO_URL"
-          alt="Samsung MCD logo"
-          class="brand-logo-image"
-          @error="showBrandLogo = false"
-        />
-        <i v-else class="pi pi-desktop"></i>
-        <div class="brand-logo-text">
-          <span class="brand-title">Samsung MCD</span>
-          <span class="brand-subtitle">Control Center</span>
+        <div class="brand-logo-row">
+          <span class="brand-dot" aria-hidden="true"></span>
+          <div class="brand-logo-text">
+            <span class="brand-title">Samsung MCD</span>
+            <span class="brand-subtitle">Control Center</span>
+          </div>
         </div>
       </div>
       <Button
@@ -2820,7 +2815,7 @@ onUnmounted(() => {
         @click="currentView = 'agents'"
       />
       <Button
-        label="Timestamp Monitor"
+        label="Host Monitor"
         icon="pi pi-clock"
         class="nav-button"
         :class="{ active: currentView === 'timestamp' }"
@@ -3226,7 +3221,7 @@ onUnmounted(() => {
         class="panel timestamp-monitor-panel"
       >
         <div class="timestamp-monitor-header">
-          <h2>Timestamp Monitor</h2>
+          <h2>Host Monitor</h2>
           <Button
             label="Refresh Now"
             icon="pi pi-refresh"
