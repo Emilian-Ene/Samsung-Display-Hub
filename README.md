@@ -38,7 +38,6 @@ Frontend default URL:
 ## Documentation
 
 - Main guide: `docs/PROJECT_GUIDE.md`
-- CSV template: `docs/devices-multi-site-template.csv`
 
 ## Recent UI Updates
 
